@@ -6,7 +6,7 @@ const ENV_PATH = resolve(process.cwd(), '.env');
 export const TOOL_CATALOG = {
   health: {
     read: ['tv_health_check', 'tv_discover', 'tv_ui_state'],
-    write: ['tv_launch'],
+    write: ['tv_launch', 'tv_update'],
   },
   chart: {
     read: ['chart_get_state', 'chart_get_visible_range'],
@@ -14,7 +14,7 @@ export const TOOL_CATALOG = {
   },
   data: {
     read: ['data_get_equity', 'data_get_indicator', 'data_get_ohlcv', 'data_get_pine_graphics', 'data_get_strategy_results', 'data_get_study_values', 'data_get_trades', 'quote_get', 'depth_get', 'symbol_info', 'symbol_search'],
-    write: ['data_save_ohlcv'],
+    write: ['data_save_ohlcv', 'strategy_prepare'],
   },
   pine: {
     read: ['pine_list_scripts'],
@@ -28,21 +28,26 @@ export const TOOL_CATALOG = {
     read: ['alert_list'],
     write: ['alert_create', 'alert_modify', 'alert_delete'],
   },
+  news: { read: ['news_get', 'news_get_content'], write: [] },
+  fundamentals: {
+    read: ['symbol_data_available', 'data_get_technicals', 'data_get_financials', 'data_get_etf_profile', 'data_get_seasonals'],
+    write: [],
+  },
   capture: {
     read: ['capture_screenshot'],
     write: [],
   },
   indicators: {
     read: [],
-    write: ['indicator_set_inputs', 'indicator_toggle_visibility'],
+    write: ['indicator_set_inputs', 'indicator_toggle_visibility', 'indicator_search', 'indicator_add'],
   },
   watchlist: {
     read: ['watchlist_get'],
-    write: ['watchlist_add'],
+    write: ['watchlist_add', 'watchlist_add_bulk', 'watchlist_remove'],
   },
   layout: {
     read: ['layout_list'],
-    write: ['layout_switch'],
+    write: ['layout_switch', 'layout_new'],
   },
   pane: {
     read: ['pane_list'],
@@ -117,6 +122,7 @@ export function loadConfig() {
 }
 
 export function isToolEnabled(name, cfg) {
+  if (!allTools().some(t => t.name === name)) return false;
   if (cfg.mode === 'read') {
     if (toolKind(name) !== 'read') return false;
     return !cfg.disabled.has(name);
@@ -131,22 +137,26 @@ export function applyPermissions(server, cfg, activity = null) {
   const original = server.tool.bind(server);
   const skipped = [];
   server.tool = (name, ...rest) => {
+    if (!allTools().some(t => t.name === name)) throw new Error(`Tool missing from permission catalog: ${name}`);
     if (!isToolEnabled(name, cfg)) {
       skipped.push(name);
       return { remove: () => {}, update: () => {}, enable: () => {}, disable: () => {} };
     }
     const callbackIndex = rest.findLastIndex((value) => typeof value === 'function');
-    if (activity && callbackIndex >= 0) {
+    if (callbackIndex >= 0) {
       const callback = rest[callbackIndex];
       rest[callbackIndex] = async (...args) => {
-        const callId = activity.toolStarted(name);
+        if (!isToolEnabled(name, loadConfig())) {
+          return { isError: true, content: [{ type: 'text', text: `Permission denied: ${name}` }] };
+        }
+        const callId = activity?.toolStarted(name);
         try {
           const result = await callback(...args);
           const toolError = result?.isError ? new Error('Tool returned an MCP error result') : null;
-          activity.toolFinished(callId, toolError);
+          activity?.toolFinished(callId, toolError);
           return result;
         } catch (error) {
-          activity.toolFinished(callId, error);
+          activity?.toolFinished(callId, error);
           throw error;
         }
       };
@@ -189,4 +199,15 @@ export function configToEnv(cfg) {
     MCP_PERM_DISABLED: [...cfg.disabled].join(','),
     MCP_PERM_ENABLED: [...cfg.enabled].join(','),
   };
+}
+
+// Preserve the effective selection when entering Custom; never grant extra tools.
+export function setPermissionMode(cfg, mode) {
+  if (!['read', 'rw', 'custom'].includes(mode)) throw new Error('Invalid permission mode');
+  const selected = allTools().filter(t => isToolEnabled(t.name, cfg)).map(t => t.name);
+  cfg.mode = mode;
+  if (mode === 'custom') {
+    cfg.enabled = new Set(selected);
+    cfg.disabled = new Set();
+  }
 }

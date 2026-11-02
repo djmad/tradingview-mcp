@@ -2,8 +2,11 @@ import CDP from 'chrome-remote-interface';
 
 let client = null;
 let targetInfo = null;
-const CDP_HOST = 'localhost';
-const CDP_PORT = 9222;
+// Overridable via TV_CDP_HOST/TV_CDP_PORT (or CDP_HOST/CDP_PORT) env vars.
+// Default is 127.0.0.1, not localhost: on some Windows machines localhost
+// resolves to ::1 first, and Electron's --remote-debugging-port only listens on IPv4.
+export const CDP_HOST = process.env.TV_CDP_HOST || process.env.CDP_HOST || '127.0.0.1';
+export const CDP_PORT = Number(process.env.TV_CDP_PORT || process.env.CDP_PORT) || 9222;
 const MAX_RETRIES = 5;
 const BASE_DELAY = 500;
 
@@ -42,18 +45,50 @@ export function safeString(str) {
  * Prevents corrupt values from reaching TradingView APIs that persist to cloud state.
  */
 export function requireFinite(value, name) {
-  const n = Number(value);
+  // Number() is a conversion, not a check. Number('') and Number([]) are 0,
+  // Number([5]) is 5, Number(true) is 1 — so an empty string, an array or a
+  // boolean becomes a valid-looking number instead of an error, while 'abc'
+  // and undefined are rejected. Callers use the returned value, so the result
+  // is a silently wrong coordinate rather than a failure: an alert created at
+  // price 0 instead of a complaint about the price.
+  //
+  // null is left coercing to 0 on purpose. tests/sanitization.test.js pins
+  // that, so it is a deliberate choice rather than an oversight.
+  if (value === null) return 0;
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN;
   if (!Number.isFinite(n)) throw new Error(`${name} must be a finite number, got: ${value}`);
   return n;
+}
+
+export function isChartTarget(target) {
+  if (target?.type !== 'page') return false;
+  try {
+    const url = new URL(target.url);
+    return url.protocol === 'https:' && (url.hostname === 'tradingview.com' || url.hostname.endsWith('.tradingview.com'))
+      && /^\/chart(?:\/|$)/.test(url.pathname);
+  } catch { return false; }
+}
+
+export async function hasChartApi(candidate) {
+  const result = await candidate.Runtime.evaluate({
+    expression: "Boolean(window.TradingViewApi?._activeChartWidgetWV?.value()?.symbolExt)", returnByValue: true,
+  });
+  return !result.exceptionDetails && result.result?.value === true;
 }
 
 export async function getClient() {
   if (client) {
     try {
-      // Quick liveness check
-      await client.Runtime.evaluate({ expression: '1', returnByValue: true });
+      // A live shell or a navigated page is not a usable chart.
+      if (!await hasChartApi(client)) throw new Error('Chart API is not ready');
       return client;
     } catch {
+      try { await client.close(); } catch {}
       client = null;
       targetInfo = null;
     }
@@ -61,13 +96,15 @@ export async function getClient() {
   return connect();
 }
 
-export async function connect() {
+export async function connect(targetId = null) {
   let lastError;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const target = await findChartTarget();
+      const target = targetId ? await findTargetById(targetId) : await findChartTarget();
       if (!target) {
-        throw new Error('No TradingView chart target found. Is TradingView open with a chart?');
+        throw new Error(targetId
+          ? `CDP target ${targetId} not found — is the tab still open?`
+          : 'No TradingView chart target found. Is TradingView open with a chart?');
       }
       targetInfo = target;
       client = await CDP({ host: CDP_HOST, port: CDP_PORT, target: target.id });
@@ -76,10 +113,14 @@ export async function connect() {
       await client.Runtime.enable();
       await client.Page.enable();
       await client.DOM.enable();
+      if (!await hasChartApi(client)) throw new Error('Chart API is not ready on selected target');
 
       return client;
     } catch (err) {
       lastError = err;
+      try { await client?.close(); } catch {}
+      client = null;
+      targetInfo = null;
       const delay = Math.min(BASE_DELAY * Math.pow(2, attempt), 30000);
       await new Promise(r => setTimeout(r, delay));
     }
@@ -87,13 +128,31 @@ export async function connect() {
   throw new Error(`CDP connection failed after ${MAX_RETRIES} attempts: ${lastError?.message}`);
 }
 
+/**
+ * Re-attach the cached CDP client to a specific target id.
+ * Used by tab_switch so subsequent reads (chart_get_state, data_get_*,
+ * quote_get, screenshots) follow the activated tab instead of staying
+ * glued to the target picked at first connect.
+ */
+export async function reconnectTo(targetId) {
+  if (client) {
+    try { await client.close(); } catch { /* already gone */ }
+    client = null;
+    targetInfo = null;
+  }
+  return connect(targetId);
+}
+
 async function findChartTarget() {
   const resp = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`);
   const targets = await resp.json();
-  // Prefer targets with tradingview.com/chart in the URL
-  return targets.find(t => t.type === 'page' && /tradingview\.com\/chart/i.test(t.url))
-    || targets.find(t => t.type === 'page' && /tradingview/i.test(t.url))
-    || null;
+  return targets.find(isChartTarget) || null;
+}
+
+async function findTargetById(id) {
+  const resp = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`);
+  const targets = await resp.json();
+  return targets.find(t => t.id === id && isChartTarget(t)) || null;
 }
 
 export async function getTargetInfo() {

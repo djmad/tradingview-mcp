@@ -49,7 +49,11 @@ export async function openPanel({ panel, action }) {
           else { if (typeof bwb.showWidget === 'function') bwb.showWidget(widgetName); }
           performed = 'opened';
         } else if (action === 'close' || (action === 'toggle' && isOpen)) {
+          // hideWidget(name) was removed in newer TradingView builds; fall back to
+          // close() (minimizes the bottom panel) and then hide() (hides the bar).
           if (typeof bwb.hideWidget === 'function') bwb.hideWidget(widgetName);
+          else if (typeof bwb.close === 'function') bwb.close();
+          else if (typeof bwb.hide === 'function') bwb.hide();
           performed = 'closed';
         }
         return { was_open: isOpen, performed: performed };
@@ -58,18 +62,23 @@ export async function openPanel({ panel, action }) {
     if (result && result.error) throw new Error(result.error);
     return { success: true, panel, action, was_open: result?.was_open ?? false, performed: result?.performed ?? 'unknown' };
   } else {
+    // Newer TV builds renamed the right-rail buttons (watchlist is now
+    // data-name="base", aria "Watchlist, details, and news"; alerts is
+    // data-name="alerts") — keep legacy selectors as fallbacks.
     const selectorMap = {
-      'watchlist': { dataName: 'base-watchlist-widget-button', ariaLabel: 'Watchlist' },
-      'alerts': { dataName: 'alerts-button', ariaLabel: 'Alerts' },
-      'trading': { dataName: 'trading-button', ariaLabel: 'Trading Panel' },
+      'watchlist': { dataNames: ['base-watchlist-widget-button', 'base'], ariaLabels: ['Watchlist', 'Watchlist, details, and news'] },
+      'alerts': { dataNames: ['alerts-button', 'alerts'], ariaLabels: ['Alerts'] },
+      'trading': { dataNames: ['trading-button'], ariaLabels: ['Trading Panel'] },
     };
     const sel = selectorMap[panel];
     const result = await evaluate(`
       (function() {
-        var dataName = ${JSON.stringify(sel.dataName)};
-        var ariaLabel = ${JSON.stringify(sel.ariaLabel)};
+        var dataNames = ${JSON.stringify(sel.dataNames)};
+        var ariaLabels = ${JSON.stringify(sel.ariaLabels)};
         var action = ${JSON.stringify(action)};
-        var btn = document.querySelector('[data-name="' + dataName + '"]') || document.querySelector('[aria-label="' + ariaLabel + '"]');
+        var btn = null;
+        for (var d = 0; d < dataNames.length && !btn; d++) btn = document.querySelector('[data-name="' + dataNames[d] + '"]');
+        for (var a = 0; a < ariaLabels.length && !btn; a++) btn = document.querySelector('[aria-label="' + ariaLabels[a] + '"]');
         if (!btn) return { error: 'Button not found for panel: ' + ${JSON.stringify(panel)} };
         var isActive = btn.getAttribute('aria-pressed') === 'true' || btn.classList.contains('isActive') || btn.classList.toString().indexOf('active') !== -1 || btn.classList.toString().indexOf('Active') !== -1;
         var rightArea = document.querySelector('[class*="layout__area--right"]');
@@ -234,21 +243,6 @@ export async function scroll({ direction, amount }) {
   return { success: true, direction, amount: px };
 }
 
-export async function mouseClick({ x, y, button, double_click }) {
-  const c = await getClient();
-  const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left';
-  const btnNum = btn === 'right' ? 2 : btn === 'middle' ? 1 : 0;
-  await c.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y });
-  await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 1 });
-  await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });
-  if (double_click) {
-    await new Promise(r => setTimeout(r, 50));
-    await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 2 });
-    await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });
-  }
-  return { success: true, x, y, button: btn, double_click: !!double_click };
-}
-
 export async function findElement({ query, strategy }) {
   const strat = strategy || 'text';
   const results = await evaluate(`
@@ -285,6 +279,26 @@ export async function findElement({ query, strategy }) {
     })()
   `);
   return { success: true, query, strategy: strat, count: results?.length || 0, elements: results || [] };
+}
+
+export function mouseButtonMask(button) {
+  return button === 'left' ? 1 : button === 'right' ? 2 : 4;
+}
+
+export async function mouseClick({ x, y, button, double_click, _deps }) {
+  const client = _deps?.getClient || getClient;
+  const c = await client();
+  const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left';
+  const btnNum = mouseButtonMask(btn);
+  await c.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y });
+  await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 1 });
+  await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });
+  if (double_click) {
+    await new Promise(r => setTimeout(r, 50));
+    await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 2 });
+    await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });
+  }
+  return { success: true, x, y, button: btn, double_click: !!double_click };
 }
 
 export async function uiEvaluate({ expression }) {

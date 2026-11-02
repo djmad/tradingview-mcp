@@ -1,5 +1,7 @@
 import readline from 'node:readline';
-import { allTools, loadConfig, saveEnv, configToEnv, isToolEnabled, toolKind } from '../permissions.js';
+import { allTools, loadConfig, saveEnv, configToEnv, isToolEnabled, setPermissionMode } from '../permissions.js';
+
+import { getToolDefinitions } from '../tool-definitions.js';
 
 const ESC = '\x1b[';
 const reset = `${ESC}0m`;
@@ -11,16 +13,18 @@ const red = `${ESC}31m`;
 const yellow = `${ESC}33m`;
 const cyan = `${ESC}36m`;
 
-export function runTui() {
+export function runTui({ stdin = process.stdin, stdout = process.stdout, onQuit = (code) => process.exit(code) } = {}) {
   const cfg = loadConfig();
-  const tools = allTools();
+  const definitions = new Map(getToolDefinitions().map(t => [t.name, t]));
+  const tools = allTools().map(t => ({ ...t, ...definitions.get(t.name) }));
+  let details = false;
+  let detailOffset = 0;
   let cursor = 0;
   let dirty = false;
   let status = '';
   let confirmingQuit = false;
 
-  const stdout = process.stdout;
-  const stdin = process.stdin;
+
 
   function effectiveEnabled(name) {
     return isToolEnabled(name, cfg);
@@ -44,11 +48,7 @@ export function runTui() {
   }
 
   function setMode(mode) {
-    cfg.mode = mode;
-    if (mode === 'custom') {
-      cfg.enabled = new Set(tools.filter((t) => !cfg.disabled.has(t.name)).filter((t) => mode !== 'custom' || true).map((t) => t.name));
-    }
-    cfg.disabled = new Set();
+    setPermissionMode(cfg, mode);
     dirty = true;
   }
 
@@ -63,11 +63,25 @@ export function runTui() {
     stdout.write(cfg.mode === 'rw' ? `${green}${inv} RW ${reset}` : ` rw `);
     stdout.write(' ');
     stdout.write(cfg.mode === 'custom' ? `${green}${inv} CUSTOM ${reset}` : ` custom `);
-    stdout.write(`   ${dim}[r]ead [w]rw [c]ustom  space=toggle  s=save  q=quit${reset}\n`);
+    stdout.write(`   ${dim}[r]ead [w]rw [c]ustom  space=toggle  enter=details  s=save  q=quit${reset}\n`);
     stdout.write(`${dim}${'─'.repeat(72)}${reset}\n`);
 
     const rows = stdout.rows || 30;
-    const viewport = Math.max(8, rows - 8);
+    const viewport = Math.max(4, rows - 9);
+    if (details) {
+      const t = tools[cursor];
+      const width = Math.max(30, (stdout.columns || 100) - 2);
+      const lines = [t.name + ' [' + t.kind + ']', t.description, '', 'Parameters:'];
+      for (const [name, schema] of Object.entries(t.parameters || {})) {
+        lines.push(name + (schema.isOptional() ? ' (optional)' : ' (required)') + ': ' + (schema.description || ''));
+      }
+      if (!Object.keys(t.parameters || {}).length) lines.push('(none)');
+      const wrapped = lines.flatMap(line => String(line || '').match(new RegExp('.{1,' + width + '}', 'g')) || ['']);
+      detailOffset = Math.max(0, Math.min(detailOffset, Math.max(0, wrapped.length - viewport)));
+      stdout.write(wrapped.slice(detailOffset, detailOffset + viewport).join('\n') + '\n');
+      stdout.write(`${dim}up/down scroll | enter/escape back | space toggle | s save${reset}\n`);
+      return;
+    }
     const start = Math.max(0, Math.min(cursor - Math.floor(viewport / 2), tools.length - viewport));
     const end = Math.min(tools.length, start + viewport);
     let lastGroup = '';
@@ -94,7 +108,7 @@ export function runTui() {
   function save() {
     saveEnv(configToEnv(cfg));
     dirty = false;
-    status = `${green}Saved to .env${reset}`;
+    status = `${green}Saved to .env - reconnect to enable tools${reset}`;
   }
 
   function quit(code = 0) {
@@ -103,7 +117,7 @@ export function runTui() {
     if (stdin.isTTY) stdin.setRawMode(false);
     stdin.pause();
     stdout.write('\n');
-    process.exit(code);
+    onQuit(code);
   }
 
   readline.emitKeypressEvents(stdin);
@@ -114,7 +128,11 @@ export function runTui() {
     if (!key) return;
     status = '';
     if (key.ctrl && key.name === 'c') quit(0);
-    if (key.name === 'up') cursor = Math.max(0, cursor - 1);
+    if (key.name === 'return' || (details && key.name === 'escape')) { details = !details; detailOffset = 0; }
+    else if (details && ['up', 'down', 'pageup', 'pagedown'].includes(key.name)) {
+      detailOffset += ({ up: -1, down: 1, pageup: -10, pagedown: 10 })[key.name];
+    }
+    else if (key.name === 'up') cursor = Math.max(0, cursor - 1);
     else if (key.name === 'down') cursor = Math.min(tools.length - 1, cursor + 1);
     else if (key.name === 'pageup') cursor = Math.max(0, cursor - 10);
     else if (key.name === 'pagedown') cursor = Math.min(tools.length - 1, cursor + 10);

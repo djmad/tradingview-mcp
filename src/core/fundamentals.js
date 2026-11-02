@@ -5,6 +5,7 @@
  * technicals, financials, and screener-style data.  Runs fetch() inside
  * the browser context so auth cookies are inherited automatically.
  */
+import { symbolSearch } from './chart.js';
 import { evaluate, evaluateAsync, KNOWN_PATHS } from '../connection.js';
 
 const CHART_API = KNOWN_PATHS.chartApi;
@@ -14,14 +15,15 @@ const CHART_API = KNOWN_PATHS.chartApi;
 // ---------------------------------------------------------------------------
 
 /** Resolve the current chart symbol in EXCHANGE:TICKER format + metadata. */
-async function resolveSymbol(symbolArg) {
-  const info = await evaluate(`
+export async function resolveSymbol(symbolArg, _deps = {}) {
+  const info = await (_deps.evaluate || evaluate)(`
     (function() {
       var chart = ${CHART_API};
       var ext = chart.symbolExt() || {};
       return {
         symbol:    ext.symbol    || chart.symbol(),
-        full_name: ext.full_name || chart.symbol(),
+        full_name: ext.pro_name || ext.full_name || chart.symbol(),
+        chart_full_name: ext.full_name || chart.symbol(),
         exchange:  ext.exchange  || '',
         type:      ext.type      || '',
         typespecs: ext.typespecs || [],
@@ -29,14 +31,16 @@ async function resolveSymbol(symbolArg) {
       };
     })()
   `);
+  info.exchange = info.full_name?.split(':')[0] || info.exchange;
   if (symbolArg) {
-    // Caller supplied explicit symbol – use it, but keep detected metadata
-    const hasPfx = symbolArg.includes(':');
-    return {
-      ...info,
-      full_name: hasPfx ? symbolArg : (info.exchange ? info.exchange + ':' + symbolArg : symbolArg),
-      symbol: hasPfx ? symbolArg.split(':')[1] : symbolArg,
-    };
+    const wanted = String(symbolArg).trim().toUpperCase();
+    if (!/^[^:\s]+:[^:\s]+$/.test(wanted)) throw new Error('Use SOURCE:TICKER for an explicit symbol');
+    if (![info.full_name, info.chart_full_name].some(s => String(s).toUpperCase() === wanted)) {
+      const search = await (_deps.symbolSearch || symbolSearch)({ query: wanted });
+      const match = search.results.find(r => r.full_name.toUpperCase() === wanted);
+      if (!match) throw new Error('Exact symbol metadata unavailable: ' + wanted);
+      return { ...match, typespecs: [] };
+    }
   }
   return info;
 }
@@ -74,14 +78,14 @@ function screenerFor(exchange, type) {
  * Generic scanner API call.  Returns { columns, values } where values is a
  * parallel array to columns, or { error }.
  */
-async function scannerFetch(fullName, columns, exchange, type) {
+export async function scannerFetch(fullName, columns, exchange, type, _deps = {}) {
   const screener = screenerFor(exchange, type);
   const body = JSON.stringify({
     symbols: { tickers: [fullName] },
     columns,
   });
 
-  const result = await evaluateAsync(`
+  let result = await (_deps.evaluateAsync || evaluateAsync)(`
     (function() {
       return fetch('https://scanner.tradingview.com/${screener}/scan', {
         method: 'POST',
@@ -102,6 +106,19 @@ async function scannerFetch(fullName, columns, exchange, type) {
     })()
   `);
 
+  if (!result || result.error) {
+    // Public scanner requests do not need session cookies. Desktop page CORS can
+    // reject them, so retry the same bounded query from Node with no credentials.
+    try {
+      const response = await (_deps.fetch || fetch)(`https://scanner.tradingview.com/${screener}/scan`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await response.json();
+      if (!response.ok) return { error: `Scanner HTTP ${response.status}: ${data.error || 'request failed'}` };
+      result = data.data?.length ? { values: data.data[0].d } : { error: 'No data returned' };
+    } catch (error) { return { error: error.message }; }
+  }
   if (!result || result.error) return { error: result?.error || 'Scanner fetch failed' };
   // Build a name→value map
   const map = {};

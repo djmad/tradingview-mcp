@@ -18,7 +18,7 @@ async function getCurrentSymbolFull() {
         try {
           var chart = ${apiPath};
           // symbol() returns bare ticker; symbolInfo has full_name with exchange prefix
-          var info = chart.symbolInfo && chart.symbolInfo();
+          var info = chart.symbolExt && chart.symbolExt();
           if (info && info.full_name) return info.full_name;
           // Fall back to exchange + ticker concatenation
           if (info && info.exchange && info.ticker) return info.exchange + ':' + info.ticker;
@@ -161,12 +161,13 @@ export async function getNews({ symbol, count = 10, lang = 'en' } = {}) {
  * Fetch the full body of a single news article by its ID.
  * Article IDs come from news_get results.
  */
-export async function getNewsContent({ id, lang = 'en' }) {
+export async function getNewsContent({ id, lang = 'en', _deps }) {
   if (!id) throw new Error('Article id is required');
 
-  const result = await evaluateAsync(`
+  const evaluateContent = _deps?.evaluateAsync || evaluateAsync;
+  const result = await evaluateContent(`
     (function() {
-      var url = 'https://news-headlines.tradingview.com/v2/content?id=' + encodeURIComponent(${JSON.stringify(id)}) + '&lang=${lang}';
+      var url = 'https://news-headlines.tradingview.com/v2/content?id=' + encodeURIComponent(${JSON.stringify(id)}) + '&lang=' + encodeURIComponent(${JSON.stringify(lang)});
       return fetch(url, {
         credentials: 'include',
         headers: {

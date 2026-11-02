@@ -32,12 +32,14 @@ export function registerChartTools(server) {
 
   server.tool('chart_manage_indicator', 'Add or remove an indicator/study on the chart', {
     action: z.enum(['add', 'remove']).describe('Action: add or remove'),
-    indicator: z.string().describe('Full indicator name: "Relative Strength Index", "MACD", "Volume", "Moving Average", "Bollinger Bands", "Moving Average Exponential". Short names like RSI/EMA do NOT work.'),
-    entity_id: z.string().optional().describe('Entity ID to remove (from chart_get_state). Required for remove.'),
+    indicator: z.string().optional().describe('Full indicator name (required for add): "Relative Strength Index", "MACD", "Volume", "Moving Average", "Bollinger Bands", "Moving Average Exponential". Short names like RSI/EMA do NOT work. Not needed for remove.'),
+    entity_id: z.string().optional().describe('Entity ID (from chart_get_state). Required for remove.'),
     inputs: z.string().optional().describe('JSON string of input overrides for the indicator (e.g., \'{"length": 20}\')'),
   }, async ({ action, indicator, entity_id, inputs }) => {
-    try { return jsonResult(await core.manageIndicator({ action, indicator, entity_id, inputs })); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+    try {
+      if (action === 'add' && !indicator) throw new Error('indicator name is required for add action.');
+      return jsonResult(await core.manageIndicator({ action, indicator, entity_id, inputs }));
+    } catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
   server.tool('add_known_indicator', 'Idempotently add one exact, versioned TradingView study in a single MCP call. Pass the full stable TradingView study ID, never an abbreviation and never a session-scoped six-character entity ID. If the exact study and configured signature already exist, it is reused without creating a duplicate. Otherwise the tool adds the correct implementation, verifies its internal study name and full input signature, and returns the current entity_id. MAExp@tv-basicstudies-274 accepts length 9, 21, 50, or 200 with source close; omit length only when length 9 is intended. Other supported IDs: Volume@tv-basicstudies-274, PUB;8a91e8e55f4a434f9a60b56f5660c244 ([Mad] Triple Bollinger Bands MTF by djmad), Script$STD;MACD@tv-scripting-101, and Script$STD;RSI@tv-scripting-101.', {

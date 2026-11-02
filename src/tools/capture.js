@@ -3,12 +3,13 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/capture.js';
 
 export function registerCaptureTools(server) {
-  server.tool('capture_screenshot', 'Capture the current TradingView window and write a PNG to the project screenshots folder. Although permission-classified as read, this creates a local file. chart and strategy_tester regions may fall back to a full-window capture when bounds are unavailable; method=api may interact with TradingView screenshot UI.', {
-    region: z.enum(['full', 'chart', 'strategy_tester']).optional().describe('Region to request (default full). A missing region boundary can fall back to full.'),
-    filename: z.string().optional().describe('Safe custom basename without extension; the result returns the actual path.'),
-    method: z.enum(['cdp', 'api']).optional().describe('cdp captures through DevTools (default); api uses TradingView screenshot behavior and can fall back to CDP.'),
-  }, async ({ region, filename, method }) => {
-    try { return jsonResult(await core.captureScreenshot({ region, filename, method })); }
+  server.tool('capture_screenshot', 'Take a screenshot of the TradingView chart', {
+    region: z.string().optional().describe('Region to capture: full, chart, strategy_tester (default full)'),
+    filename: z.string().optional().describe('Custom filename (without extension)'),
+    method: z.string().optional().describe('Capture method: cdp (Page.captureScreenshot) or api (chartWidgetCollection.takeScreenshot) (default cdp)'),
+    wait_for_render: z.boolean().optional().describe('Wait for the chart canvas to stabilize before capturing. Use after chart_set_symbol or chart_set_timeframe to avoid stale frames.'),
+  }, async ({ region, filename, method, wait_for_render }) => {
+    try { return jsonResult(await core.captureScreenshot({ region, filename, method, waitForRender: wait_for_render })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 }

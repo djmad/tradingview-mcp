@@ -1,72 +1,83 @@
-# TradingView MCP Skills and Tool Coverage
+# TradingView MCP tool catalog
 
-This index covers the complete TradingView MCP catalog: all 60 registered tools, including tools hidden by the current permission mode. Runtime availability is controlled by `.env` or the permission TUI; absence from the active MCP tool list does not remove a tool from this catalog.
+All 75 registered tools are listed below, including tools disabled by your current settings. The permission TUI (npm run admin; Enter for details) and MCP tools/list provide full parameter descriptions. See [README](../README.md) for transports, workflows and permission behavior.
 
-## Skill routing
+| Tool | Access | Parameters |
+|---|---|---|
+| `tv_health_check` | read | (none) |
+| `tv_discover` | read | (none) |
+| `tv_ui_state` | read | (none) |
+| `tv_launch` | write | `port`, `kill_existing` |
+| `tv_update` | write | (none) |
+| `chart_get_state` | read | (none) |
+| `chart_get_visible_range` | read | (none) |
+| `chart_set` | write | `symbol`, `timeframe`, `chart_type`, `visible_range`, `scroll_to` |
+| `chart_manage_indicator` | write | `action`, `indicator`, `entity_id`, `inputs` |
+| `add_known_indicator` | write | `indicator_id`, `length` |
+| `data_get_equity` | read | (none) |
+| `data_get_indicator` | read | `entity_id` |
+| `data_get_ohlcv` | read | `count`, `summary` |
+| `data_get_pine_graphics` | read | `kinds`, `study_filter`, `max_labels`, `verbose` |
+| `data_get_strategy_results` | read | (none) |
+| `data_get_study_values` | read | (none) |
+| `data_get_trades` | read | `max_trades` |
+| `quote_get` | read | `symbol` |
+| `depth_get` | read | (none) |
+| `symbol_info` | read | (none) |
+| `symbol_search` | read | `query`, `type` |
+| `data_save_ohlcv` | write | `symbol`, `timeframe`, `max_history`, `max_iterations`, `settle_ms` |
+| `strategy_prepare` | write | (none) |
+| `pine_list_scripts` | read | (none) |
+| `pine_edit` | write | `action`, `allow_title_mismatch`, `source` |
+| `pine_new` | write | `type` |
+| `pine_open` | write | `name` |
+| `draw_get_properties` | read | `entity_id` |
+| `draw_list` | read | (none) |
+| `draw_shape` | write | `shape`, `point`, `point2`, `overrides`, `text` |
+| `draw_clear` | write | (none) |
+| `draw_remove_one` | write | `entity_id` |
+| `alert_list` | read | (none) |
+| `alert_create` | write | `condition`, `price`, `message`, `name`, `symbol`, `resolution`, `popup`, `email`, `mobile_push`, `sms_over_email`, `web_hook`, `sound_file`, `sound_duration`, `expiration` |
+| `alert_modify` | write | `alert_id`, `price`, `condition`, `message`, `name`, `symbol`, `resolution`, `popup`, `email`, `mobile_push`, `sms_over_email`, `web_hook`, `active`, `expiration`, `auto_deactivate` |
+| `alert_delete` | write | `alert_id`, `alert_ids`, `delete_all` |
+| `news_get` | read | `symbol`, `count`, `lang` |
+| `news_get_content` | read | `id`, `lang` |
+| `symbol_data_available` | read | `symbol` |
+| `data_get_technicals` | read | `symbol` |
+| `data_get_financials` | read | `symbol`, `section` |
+| `data_get_etf_profile` | read | `symbol`, `section` |
+| `data_get_seasonals` | read | `symbol`, `years` |
+| `capture_screenshot` | read | `region`, `filename`, `method`, `wait_for_render` |
+| `indicator_set_inputs` | write | `entity_id`, `inputs` |
+| `indicator_toggle_visibility` | write | `entity_id`, `visible` |
+| `indicator_search` | write | `query`, `limit` |
+| `indicator_add` | write | `query`, `match`, `section` |
+| `watchlist_get` | read | (none) |
+| `watchlist_add` | write | `symbol` |
+| `watchlist_add_bulk` | write | `symbols` |
+| `watchlist_remove` | write | `symbols` |
+| `layout_list` | read | (none) |
+| `layout_switch` | write | `name` |
+| `layout_new` | write | `name` |
+| `pane_list` | read | (none) |
+| `pane_focus` | write | `index` |
+| `pane_set_layout` | write | `layout` |
+| `pane_set_symbol` | write | `index`, `symbol` |
+| `tab_list` | read | (none) |
+| `tab_close` | write | (none) |
+| `tab_new` | write | `layout`, `name` |
+| `tab_switch` | write | `index` |
+| `replay` | write | `action`, `date`, `speed`, `trade_action` |
+| `batch_run` | write | `symbols`, `timeframes`, `action`, `delay_ms`, `ohlcv_count` |
+| `ui_find_element` | read | `query`, `strategy` |
+| `ui_click` | write | `by`, `value` |
+| `ui_evaluate` | write | `expression` |
+| `ui_fullscreen` | write | (none) |
+| `ui_hover` | write | `by`, `value` |
+| `ui_keyboard` | write | `key`, `modifiers` |
+| `ui_mouse_click` | write | `x`, `y`, `button`, `double_click` |
+| `ui_open_panel` | write | `panel`, `action` |
+| `ui_scroll` | write | `direction`, `amount` |
+| `ui_type_text` | write | `text` |
 
-| Skill | Use for |
-|---|---|
-| `chart-analysis` | Chart setup, live price, technical analysis, indicators, drawings, alerts, screenshots, DOM, and UI fallback |
-| `multi-symbol-scan` | Watchlists, batch scans, multi-timeframe comparison, OHLCV collection/export, layouts, panes, and tabs |
-| `performance-analyst` | Backtest diagnosis, trade/equity analysis, robustness, drawdowns, and cross-market comparisons |
-| `pine-develop` | Pine creation, editing, checking, compiling, saving, runtime diagnostics, and chart verification |
-| `replay-practice` | Bar Replay setup, stepping, autoplay, simulated trades, annotations, and session review |
-| `strategy-report` | Evidence-backed written strategy reports with metrics, trades, equity, OHLCV context, and captures |
-
-## Permission model
-
-- `read`: expose only catalog entries marked Read, except explicitly disabled tools.
-- `rw`: expose Read and Write tools, except explicitly disabled tools.
-- `custom`: expose only explicitly enabled tools, minus explicitly disabled tools.
-- Run `npm run admin` to manage permissions. Write classification includes chart mutations, file exports, launches, replay actions, alerts, UI automation, layout changes, and other persistent or stateful operations.
-
-Always call `tv_health_check` first. Read current state before mutation, confirm destructive or externally visible actions, and verify returned state afterward.
-
-## Symbol identity rule
-
-- Every TradingView instrument is identified as `SOURCE:TICKER` (exchange/data source plus ticker). Never send an unqualified ticker to a symbol parameter.
-- Examples: `TVC:GOLD`, `TVC:VIX`, `INDEX:BTCUSD`, `NYSE:AI`, `XETR:SIE`, `XETR:OMV`, `XETR:VAS`, `NASDAQ:AAPL`, `CME_MINI:ES1!`.
-- TradingView URLs may encode the same identity as `/symbols/TVC-GOLD/` or `/symbols/BTCUSD/?exchange=INDEX`; MCP tools use `TVC:GOLD` and `INDEX:BTCUSD` respectively.
-- If the source/exchange is unknown or ambiguous, call `symbol_search`, compare `exchange`, `type`, and `description`, then pass the chosen `results[].full_name` exactly. Never guess the source.
-- Read-only tools operate on the active chart unless their description says otherwise. In particular, `quote_get` validates an optional symbol but never switches the chart.
-
-## Complete 60-tool catalog
-
-| Group | Read tools | Write tools | Primary skill |
-|---|---|---|---|
-| Health | `tv_health_check`, `tv_discover`, `tv_ui_state` | `tv_launch` | `chart-analysis` |
-| Chart | `chart_get_state`, `chart_get_visible_range` | `chart_set`, `chart_manage_indicator`, `add_known_indicator` | `chart-analysis` |
-| Data | `data_get_equity`, `data_get_indicator`, `data_get_ohlcv`, `data_get_pine_graphics`, `data_get_strategy_results`, `data_get_study_values`, `data_get_trades`, `quote_get`, `depth_get`, `symbol_info`, `symbol_search` | `data_save_ohlcv` | `chart-analysis`, `performance-analyst`, `strategy-report` |
-| Pine | `pine_list_scripts` | `pine_edit`, `pine_new`, `pine_open` | `pine-develop` |
-| Drawing | `draw_get_properties`, `draw_list` | `draw_shape`, `draw_clear`, `draw_remove_one` | `chart-analysis`, `replay-practice` |
-| Alerts | `alert_list` | `alert_create`, `alert_modify`, `alert_delete` | `chart-analysis` |
-| Capture | `capture_screenshot` | None | All evidence-producing skills |
-| Indicators | None | `indicator_set_inputs`, `indicator_toggle_visibility` | `chart-analysis`, `pine-develop` |
-| Watchlist | `watchlist_get` | `watchlist_add` | `multi-symbol-scan` |
-| Layout | `layout_list` | `layout_switch` | `multi-symbol-scan` |
-| Pane | `pane_list` | `pane_focus`, `pane_set_layout`, `pane_set_symbol` | `multi-symbol-scan` |
-| Tab | `tab_list` | `tab_close`, `tab_new`, `tab_switch` | `multi-symbol-scan` |
-| Replay | None | `replay` | `replay-practice` |
-| Batch | None | `batch_run` | `multi-symbol-scan`, `performance-analyst` |
-| UI | `ui_find_element` | `ui_click`, `ui_evaluate`, `ui_fullscreen`, `ui_hover`, `ui_keyboard`, `ui_mouse_click`, `ui_open_panel`, `ui_scroll`, `ui_type_text` | `chart-analysis`, `pine-develop` |
-
-## Dispatcher quick reference
-
-- `chart_set`: combine `symbol`, `timeframe`, `chart_type`, `visible_range`, and `scroll_to` in one request.
-- `pine_edit`: use `get_source`, `set_source`, `compile`, `smart_compile`, `get_errors`, `get_console`, `save`, `check`, or `analyze`.
-- `replay`: use `start`, `step`, `autoplay`, `stop`, `trade`, or `status`.
-- `batch_run`: use `screenshot`, `get_ohlcv`, or `get_strategy_results`.
-
-## OHLCV rules
-
-- Use `data_get_ohlcv` for data returned directly to the model. Start with `summary=true`; request raw bars only when needed for calculations.
-- Use `data_save_ohlcv` for durable CSV export. It can switch symbol/timeframe, paginate older history, and stop at `max_history` or `max_iterations`.
-- Use `batch_run` with `action=get_ohlcv` for repeated bounded scans; set `ohlcv_count` explicitly.
-- Always report symbol, timeframe, requested versus returned bar count, and actual date coverage.
-
-## High-impact safeguards
-
-- Confirm `tv_launch` when it may terminate an existing TradingView process.
-- Confirm `draw_clear`, `alert_delete`, `tab_close`, saved-layout changes, and persistent watchlist or CSV actions.
-- Use `ui_evaluate` only as a last resort and avoid arbitrary mutation without explicit authorization.
-- Keep the default bind address local (`127.0.0.1`) and use the Streamable HTTP endpoint `/mcp` for Codex.
+Workflow guides: [chart analysis](chart-analysis/SKILL.md), [multi-symbol scan](multi-symbol-scan/SKILL.md), [Pine development](pine-develop/SKILL.md), [replay practice](replay-practice/SKILL.md), [strategy report](strategy-report/SKILL.md), [performance analysis](performance-analyst/SKILL.md).

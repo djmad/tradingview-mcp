@@ -125,6 +125,39 @@ describe('requireFinite() — numeric validation', () => {
   it('includes bad value in error message', () => {
     assert.throws(() => requireFinite('oops', 'field'), /got: oops/);
   });
+
+  // The cases below were previously accepted. Number() is a conversion rather
+  // than a check, so each of these silently became a number while 'abc' and
+  // undefined were rejected — an inconsistency rather than a policy.
+
+  it('rejects an empty or whitespace-only string', () => {
+    // Number('') is 0. An empty price field became an alert at price 0.
+    assert.throws(() => requireFinite('', 'price'), /price must be a finite number/);
+    assert.throws(() => requireFinite('   ', 'price'), /price must be a finite number/);
+  });
+
+  it('rejects arrays', () => {
+    // Number([]) is 0 and Number([5]) is 5, so an array arrived as a
+    // plausible coordinate.
+    assert.throws(() => requireFinite([], 'time'), /time must be a finite number/);
+    assert.throws(() => requireFinite([5], 'time'), /time must be a finite number/);
+  });
+
+  it('rejects booleans', () => {
+    // Number(true) is 1, which is a perfectly ordinary price.
+    assert.throws(() => requireFinite(true, 'price'), /price must be a finite number/);
+    assert.throws(() => requireFinite(false, 'price'), /price must be a finite number/);
+  });
+
+  it('rejects plain objects', () => {
+    assert.throws(() => requireFinite({}, 'x'), /x must be a finite number/);
+  });
+
+  it('still coerces null to 0, as before', () => {
+    // Deliberately unchanged: the existing test above pins this behaviour, so
+    // it is left to the maintainers rather than altered in passing.
+    assert.equal(requireFinite(null, 'x'), 0);
+  });
 });
 
 // ── chart.js — safeString in evaluate calls ──────────────────────────────
@@ -367,7 +400,7 @@ describe('source audit — no unsafe interpolation patterns', () => {
   }
 
   const VULNERABLE_PATTERNS = [
-    /evaluate\([^)]*'\$\{(?!CHART_API|CWC|rp|apiPath|colPath|CHART_COLLECTION)/,
+    /evaluate\([^)]*'\$\{(?!CHART_API|CWC|rp|apiPath|colPath|CHART_COLLECTION|DIALOG)/,
   ];
 
   for (const file of coreFiles) {

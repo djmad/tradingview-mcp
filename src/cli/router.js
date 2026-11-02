@@ -3,6 +3,7 @@
  * Zero dependencies — uses only Node.js built-ins.
  */
 import { parseArgs } from 'node:util';
+import { assertCliPermission } from './permissions.js';
 
 /** @type {Map<string, { description: string, options?: object, handler: Function, subcommands?: Map<string, object> }>} */
 const commands = new Map();
@@ -108,6 +109,7 @@ export async function run(argv) {
         process.exitCode = 0;
         return;
       }
+      assertCliPermission(cmdName, subName, values, positionals);
       await execute(handler, values, positionals);
     } catch (err) {
       handleError(err);
@@ -127,6 +129,7 @@ export async function run(argv) {
         process.exitCode = 0;
         return;
       }
+      assertCliPermission(cmdName, null, values, positionals);
       await execute(handler, values, positionals);
     } catch (err) {
       handleError(err);

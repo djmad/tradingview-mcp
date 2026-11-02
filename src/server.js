@@ -5,22 +5,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { registerTools, getToolDefinitions } from './tool-definitions.js';
+import { pathToFileURL } from 'node:url';
 import { ActivityMonitor } from './activity.js';
 import { disconnect } from './connection.js';
-import { registerHealthTools } from './tools/health.js';
-import { registerChartTools } from './tools/chart.js';
-import { registerPineTools } from './tools/pine.js';
-import { registerDataTools } from './tools/data.js';
-import { registerCaptureTools } from './tools/capture.js';
-import { registerDrawingTools } from './tools/drawing.js';
-import { registerAlertTools } from './tools/alerts.js';
-import { registerBatchTools } from './tools/batch.js';
-import { registerReplayTools } from './tools/replay.js';
-import { registerIndicatorTools } from './tools/indicators.js';
-import { registerWatchlistTools } from './tools/watchlist.js';
-import { registerUiTools } from './tools/ui.js';
-import { registerPaneTools } from './tools/pane.js';
-import { registerTabTools } from './tools/tab.js';
 import { loadConfig, applyPermissions, allTools } from './permissions.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -59,7 +47,7 @@ function buildServer(activity = null) {
   const server = new McpServer(
     {
       name: 'tradingview',
-      version: '1.1.0',
+      version: '2.1.0',
       description: 'AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol',
     },
     {
@@ -67,21 +55,14 @@ function buildServer(activity = null) {
     },
   );
 
+  const catalog = new Set(allTools().map(t => t.name));
+  const actual = new Set(getToolDefinitions().map(t => t.name));
+  if (catalog.size !== actual.size || [...actual].some(name => !catalog.has(name))) {
+    throw new Error('Permission catalog and registered tools differ. Classify every new tool before starting.');
+  }
   const { skipped } = applyPermissions(server, cfg, activity);
-  registerHealthTools(server);
-  registerChartTools(server);
-  registerPineTools(server);
-  registerDataTools(server);
-  registerCaptureTools(server);
-  registerDrawingTools(server);
-  registerAlertTools(server);
-  registerBatchTools(server);
-  registerReplayTools(server);
-  registerIndicatorTools(server);
-  registerWatchlistTools(server);
-  registerUiTools(server);
-  registerPaneTools(server);
-  registerTabTools(server);
+
+  registerTools(server);
 
   return { server, cfg, skipped, total: allTools().length };
 }
@@ -298,6 +279,7 @@ async function startHttp({ host, port, tui, transport: transportMode }) {
   return { httpServer, monitor, shutdown };
 }
 
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 const args = parseArgs(process.argv);
 
 if (args.admin) {
@@ -307,6 +289,8 @@ if (args.admin) {
   await startHttp(args);
 } else {
   await startStdio();
+}
+
 }
 
 export { buildServer, parseArgs, startHttp };

@@ -1,11 +1,16 @@
 import { z } from 'zod';
+import { booleanParam } from './_schema.js';
 import { jsonResult } from './_format.js';
 import * as core from '../core/data.js';
 
 export function registerDataTools(server) {
+  server.tool('strategy_prepare', 'Open Strategy Tester and make hidden strategies visible so TradingView computes their reports. This changes chart/UI state; use before strategy reads only when explicitly allowed.', {}, async () => {
+    try { return jsonResult({ success: true, ...await core.prepareStrategyTester() }); }
+    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+  });
   server.tool('data_get_ohlcv', 'Read the newest OHLCV bars already loaded for the active SOURCE:TICKER and timeframe. Returns bars in chronological order. Default 100, maximum 5000; this tool does not page older history. Start with summary=true because raw bars can be very large.', {
     count: z.coerce.number().int().min(1).max(5000).optional().describe('Number of newest loaded bars to retrieve (default 100, hard maximum 5000).'),
-    summary: z.coerce.boolean().optional().describe('Return summary stats (high, low, open, close, avg volume, range) instead of all bars — much smaller output'),
+    summary: booleanParam().optional().describe('Return summary stats (high, low, open, close, avg volume, range) instead of all bars — much smaller output'),
   }, async ({ count, summary }) => {
     try { return jsonResult(await core.getOhlcv({ count, summary })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
@@ -18,13 +23,13 @@ export function registerDataTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('data_get_strategy_results', 'Read performance metrics for the first strategy already attached to the active chart. Does not add a strategy or open Strategy Tester. An empty result may still have success=true; inspect metric_count and error.', {}, async () => {
+  server.tool('data_get_strategy_results', 'Get strategy performance metrics from Strategy Tester. Read-only: use the separately permissioned strategy_prepare first if the report is not computed.', {}, async () => {
     try { return jsonResult(await core.getStrategyResults()); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('data_get_trades', 'Read a bounded sample of trades from the first strategy already attached to the active chart. This is not a full-history export. An empty result may still have success=true; inspect trade_count and error.', {
-    max_trades: z.coerce.number().int().min(1).max(20).optional().describe('Maximum trades to return (default and hard maximum: 20).'),
+  server.tool('data_get_trades', 'Get trade list from Strategy Tester. Read-only: use strategy_prepare first if needed.', {
+    max_trades: z.coerce.number().optional().describe('Maximum trades to return'),
   }, async ({ max_trades }) => {
     try { return jsonResult(await core.getTrades({ max_trades })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
@@ -51,7 +56,7 @@ export function registerDataTools(server) {
     kinds: z.array(z.enum(['lines', 'labels', 'tables', 'boxes'])).optional().describe('Which graphics to return. Default: all four. Pass a subset (e.g. ["lines","labels"]) for smaller payloads.'),
     study_filter: z.string().optional().describe('Case-sensitive substring matched against the study display name. Omit to scan every visible Pine study.'),
     max_labels: z.coerce.number().optional().describe('Max labels returned per study (default 50). Only applies when kinds includes "labels". Raise if a study draws many annotations.'),
-    verbose: z.coerce.boolean().optional().describe('Return raw drawing data including IDs, coordinates, colors. Default false (compact: deduplicated price levels / text+price pairs / {high,low} zones). Applies to lines, labels, boxes; tables ignore this flag.'),
+    verbose: booleanParam().optional().describe('Return raw drawing data including IDs, coordinates, colors. Default false (compact: deduplicated price levels / text+price pairs / {high,low} zones). Applies to lines, labels, boxes; tables ignore this flag.'),
   }, async ({ kinds, study_filter, max_labels, verbose }) => {
     try {
       const want = new Set(kinds && kinds.length ? kinds : ['lines', 'labels', 'tables', 'boxes']);
@@ -64,7 +69,7 @@ export function registerDataTools(server) {
     } catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('data_get_study_values', 'Read current Data Window values for all visible studies on the active chart (including custom plot() outputs). Returns display values, not historical series or study IDs. An empty studies array is valid when no visible study exposes values.', {}, async () => {
+  server.tool('data_get_study_values', 'Read Data Window display values (which can follow the crosshair), plus last_bar_values and last_bar_time anchored to the latest loaded bar. Includes indicators in separate panes. An empty studies array is valid when no visible study exposes values.', {}, async () => {
     try { return jsonResult(await core.getStudyValues()); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });

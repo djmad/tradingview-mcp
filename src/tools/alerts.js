@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { booleanParam } from './_schema.js';
 import { jsonResult } from './_format.js';
 import * as core from '../core/alerts.js';
 
@@ -12,10 +13,10 @@ export function registerAlertTools(server) {
       name: z.string().optional().describe('Short alert title shown in the alert list (defaults to empty).'),
       symbol: z.string().regex(/^[^:\s]+:[^:\s]+$/, 'Use SOURCE:TICKER').optional().describe('Override symbol in SOURCE:TICKER form, e.g. TVC:GOLD or INDEX:BTCUSD. Defaults to the active chart symbol. If the source is unclear, call symbol_search first and use results[].full_name.'),
       resolution: z.string().optional().describe('Alert evaluation resolution. Default "1" (1-minute) — TV web uses this for price alerts regardless of chart timeframe.'),
-      popup: z.coerce.boolean().optional().describe('Show desktop popup on fire (default true).'),
-      email: z.coerce.boolean().optional().describe('Send email on fire (default false).'),
-      mobile_push: z.coerce.boolean().optional().describe('Send mobile push on fire (default true).'),
-      sms_over_email: z.coerce.boolean().optional().describe('Send SMS-via-email on fire (default false).'),
+      popup: booleanParam().optional().describe('Show desktop popup on fire (default true).'),
+      email: booleanParam().optional().describe('Send email on fire (default false).'),
+      mobile_push: booleanParam().optional().describe('Send mobile push on fire (default true).'),
+      sms_over_email: booleanParam().optional().describe('Send SMS-via-email on fire (default false).'),
       web_hook: z.string().nullable().optional().describe('Webhook URL to POST on fire (default null).'),
       sound_file: z.string().optional().describe('Sound file id (default "alert/3_notes_reverb").'),
       sound_duration: z.coerce.number().optional().describe('Sound duration in seconds (default 10).'),
@@ -36,14 +37,14 @@ export function registerAlertTools(server) {
       name: z.string().optional().describe('New short title.'),
       symbol: z.string().regex(/^[^:\s]+:[^:\s]+$/, 'Use SOURCE:TICKER').optional().describe('New symbol in SOURCE:TICKER form, e.g. NYSE:AI or XETR:SIE. If the source is unclear, call symbol_search first and use results[].full_name.'),
       resolution: z.string().optional().describe('New evaluation resolution (e.g. "1", "5", "60", "1D").'),
-      popup: z.coerce.boolean().optional(),
-      email: z.coerce.boolean().optional(),
-      mobile_push: z.coerce.boolean().optional(),
-      sms_over_email: z.coerce.boolean().optional(),
+      popup: booleanParam().optional(),
+      email: booleanParam().optional(),
+      mobile_push: booleanParam().optional(),
+      sms_over_email: booleanParam().optional(),
       web_hook: z.string().nullable().optional(),
-      active: z.coerce.boolean().optional().describe('Set to false to deactivate the alert without deleting.'),
+      active: booleanParam().optional().describe('Set to false to deactivate the alert without deleting.'),
       expiration: z.string().nullable().optional().describe('ISO timestamp; pass null to remove expiration.'),
-      auto_deactivate: z.coerce.boolean().optional(),
+      auto_deactivate: booleanParam().optional(),
     },
     async (args) => {
       try { return jsonResult(await core.modify(args)); }
@@ -60,7 +61,7 @@ export function registerAlertTools(server) {
     {
       alert_id: z.coerce.number().optional().describe('Single alert_id (from alert_list) to delete.'),
       alert_ids: z.array(z.coerce.number()).optional().describe('Batch — array of alert_ids to delete in one call.'),
-      delete_all: z.coerce.boolean().optional().describe('If true, opens context menu for manual bulk deletion (legacy fallback).'),
+      delete_all: booleanParam().optional().describe('If true, opens context menu for manual bulk deletion (legacy fallback).'),
     },
     async ({ alert_id, alert_ids, delete_all }) => {
       try { return jsonResult(await core.deleteAlerts({ alert_id, alert_ids, delete_all })); }

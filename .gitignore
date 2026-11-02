@@ -4,3 +4,13 @@ scripts/current.pine
 temp_*
 *.log
 discovery-log.json
+rules.json
+
+.env
+OHLCV/
+training ml/
+Tradingview Payware/
+prompts/
+.mcp.json
+AUDIT_REPORT.md
+SHA256SUMS.txt
