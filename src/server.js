@@ -49,7 +49,7 @@ function buildServer(activity = null, options = {}) {
   const server = new McpServer(
     {
       name: 'tradingview',
-      version: '2.2.0',
+      version: '2.2.1',
       description: 'AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol',
     },
     {
