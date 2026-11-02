@@ -6,7 +6,7 @@ Unofficial project, unaffiliated with TradingView Inc. or Anthropic. Uses undocu
 
 ## Setup
 
-Requires Node.js >=20.19 and TradingView Desktop with CDP enabled (default `127.0.0.1:9222`).
+Requires Node.js 26.13.0 or a newer Node.js 26 release and TradingView Desktop with CDP enabled (default `127.0.0.1:9222`). The `.nvmrc` file pins 26.13.0 for version managers and GitHub CI; update that pin when adopting a newer Node.js 26 release. Node.js 27 is outside this fork's supported runtime range.
 
 ```powershell
 npm ci --ignore-scripts
