@@ -1,6 +1,6 @@
 # TradingView MCP — djmad fork
 
-TradingView Desktop automation with a permission administration TUI, live activity dashboard, stdio, Streamable HTTP and legacy SSE. Version 2.2.0 combines this fork's local enhancements and news/financial tools with upstream main through `c05b8f5755ed8e64ea242de88ddbf46aa24d56a4`.
+TradingView Desktop automation with a permission administration TUI, live activity dashboard, stdio, Streamable HTTP and legacy SSE. Version 2.2.1 combines this fork's local enhancements and news/financial tools with upstream main through `c05b8f5755ed8e64ea242de88ddbf46aa24d56a4`.
 
 Unofficial project, unaffiliated with TradingView Inc. or Anthropic. Uses undocumented Desktop APIs; a TradingView update can change their behavior. Use your own account and comply with the applicable platform and market-data terms. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), and [RESEARCH.md](RESEARCH.md).
 
@@ -26,6 +26,7 @@ npm run admin
 - **Space**: toggle the selected tool. Write tools stay disabled in Read mode.
 - **Enter**: view its current description and all parameter descriptions; scroll with Up/Down or PageUp/PageDown. Enter/Escape returns to the list.
 - **L**: toggle the optional persistent metadata audit log.
+- **F**: open output folders. Select Screenshots/OHLCV with Up/Down, Enter to edit, Enter to accept, Escape to cancel. Empty input restores the default.
 - **S**: save. **Q**: quit; unsaved changes require confirmation.
 
 All 84 registered tools have an explicit read/write classification. News, financials, technicals, ETF profiles, seasonals and asset-data discovery appear in the administrator. Upstream additions include indicator search/add, watchlist bulk add/remove, new layouts, and self-update. Indicator search is classified as write because it opens and operates the Indicators dialog.
@@ -35,6 +36,19 @@ Entering Custom preserves the current effective selection; it does not grant ext
 Without saved settings the compatibility default is Read/write. Select Read and save if that is your preferred default. Configuration uses `MCP_PERM_MODE=read|rw|custom`, `MCP_PERM_ENABLED` and `MCP_PERM_DISABLED` (comma-separated names). Unknown tools are denied, and server startup rejects a mismatch between registered tools and the permission catalog.
 
 Permissions restrict calls made through this package's MCP and CLI interfaces. The package does not sandbox arbitrary code with filesystem/CDP access. Enabling general JavaScript/UI automation also enables broad actions within TradingView; narrower disabled tools do not constrain equivalent operations performed through those general controls. Screenshot reads create local PNG files.
+
+## Screenshot and OHLCV output folders
+
+Open `npm run admin`, press **F**, choose a folder field with Up/Down and press Enter. Type or paste the path; Enter accepts the draft, Escape cancels it. Press **S** to save to the existing `.env` alongside permissions and audit settings. An empty field resets its default. Windows drive paths, UNC paths, spaces, `#`, apostrophes and umlauts are supported. The page displays the effective resolved destination and any process-environment override.
+
+```dotenv
+MCP_SCREENSHOT_DIR="D:\TradingView exports\Screenshots"
+MCP_OHLCV_DIR="D:\TradingView exports\OHLCV"
+```
+
+Relative folder settings are resolved against this project directory. The defaults are the project's `screenshots/` and `OHLCV/`. Keep running the administrator/server from the project root so both use the same existing `.env`; process environment settings override that file. Drive-relative forms such as `C:Exports` are rejected; use a fully qualified drive path. Saved changes apply to the next server/CLI export without a restart. Folder creation occurs during an actual export, and existing exports remain in their previous locations.
+
+CDP screenshots, batch screenshots, CSV exports and bulk OHLCV logs/failure reports use these settings. TradingView's native `method=api` screenshot UI controls its own save destination; if it falls back to CDP, the configured screenshot folder applies. Output filenames are sanitized for traversal and Windows reserved characters/device names. Invalid paths or save failures are displayed in the administrator. The configuration writer replaces only explicitly updated keys and preserves unrelated lines/comments/quoting; failed atomic replacement retains the previous file.
 
 ## Start the server
 
@@ -141,6 +155,6 @@ node scripts/ihsg-smoke.js # one-symbol/report proof on the disposable temp layo
 
 The normal suite includes unit and local transport tests plus existing TradingView compile-API checks. The live smoke test reads health/quotes/data/news/financials, draws and removes one line, changes and restores timeframe, and checks permission enforcement and restoration. It does not run alerts, trades, or Pine editor saves.
 
-**Final root verification:** 375 tests passed, zero failures/skips; lint passed with 0 errors and 13 existing warnings; dependency audit found zero known advisories. Live daily-history, feature/replay and one-symbol IHSG/report checks passed within the [documented evidence and incident boundaries](docs/APPROVED_FEATURES.md#final-verification). Watchlist writes have mocked proof only; the earlier missing unnamed component was not identified or recreated.
+**v2.2.0 baseline verification:** 375 tests passed, zero failures/skips; lint passed with 0 errors and 13 existing warnings; dependency audit found zero known advisories. Live daily-history, feature/replay and one-symbol IHSG/report checks passed within the [documented evidence and incident boundaries](docs/APPROVED_FEATURES.md#final-verification). Watchlist writes have mocked proof only; the earlier missing unnamed component was not identified or recreated.
 
 See [integration notes](docs/INTEGRATION.md) and [the PR review ledger](docs/upstream-pr-triage.md) for provenance, checks and historical feature triage and subsequent approved implementation. The full upstream history and original MIT license text are retained. Self-update follows this fork's `origin/main`, using a clean fast-forward only.

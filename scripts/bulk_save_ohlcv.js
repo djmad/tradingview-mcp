@@ -18,12 +18,11 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { setSymbol, setTimeframe } from '../src/core/chart.js';
 import { saveOhlcv } from '../src/core/data.js';
+import { getOutputDirectory } from '../src/output-paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname);
 const ASSETS_PATH = join(ROOT, 'assets.yaml');
-const OHLCV_DIR = join(ROOT, 'OHLCV');
-const LOG_PATH = join(OHLCV_DIR, '_bulk_run.log');
 
 function parseArgs(argv) {
   const args = { tf: '60', limit: 0, start: 0, pages: 60, settle: 700 };
@@ -149,12 +148,12 @@ function log(line) {
   const stamp = new Date().toISOString();
   const s = `[${stamp}] ${line}\n`;
   process.stdout.write(s);
-  try { appendFileSync(LOG_PATH, s); } catch {}
+  try { const directory = getOutputDirectory('ohlcv'); mkdirSync(directory, { recursive: true }); appendFileSync(join(directory, '_bulk_run.log'), s); } catch {}
 }
 
 async function main() {
   const args = parseArgs(process.argv);
-  mkdirSync(OHLCV_DIR, { recursive: true });
+  mkdirSync(getOutputDirectory('ohlcv'), { recursive: true });
 
   const tickers = readTickers();
   log(`Found ${tickers.length} tickers in assets.yaml`);
@@ -190,7 +189,7 @@ async function main() {
 
   log(`Done. ok=${summary.ok} skipped=${summary.skipped} failed=${summary.failed}`);
   if (summary.failures.length > 0) {
-    const failPath = join(OHLCV_DIR, '_failures.json');
+    const failPath = join(getOutputDirectory('ohlcv'), '_failures.json');
     writeFileSync(failPath, JSON.stringify(summary.failures, null, 2));
     log(`Failure list written to ${failPath}`);
   }

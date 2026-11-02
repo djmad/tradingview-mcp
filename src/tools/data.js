@@ -74,7 +74,7 @@ export function registerDataTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('data_save_ohlcv', 'Download all available OHLCV bars and save as CSV under the OHLCV/ folder. Optionally switches symbol/timeframe first, then pages in maximum history before exporting. Returns the file path and bar count.', {
+  server.tool('data_save_ohlcv', 'Download all available OHLCV bars and save as CSV under the configured MCP_OHLCV_DIR folder (default OHLCV/). Optionally switches symbol/timeframe first, then pages in maximum history before exporting. Returns the file path and bar count.', {
     symbol: z.string().regex(/^[^:\s]+:[^:\s]+$/, 'Use SOURCE:TICKER').optional().describe('Full SOURCE:TICKER to switch to before downloading, e.g. INDEX:BTCUSD or BINANCE:BTCUSDT. Omit to use the current chart symbol. If the source is unclear, call symbol_search first and use results[].full_name.'),
     timeframe: z.string().optional().describe('Timeframe to set before downloading (e.g., "1", "5", "60", "D"). Omit to use the current chart timeframe.'),
     max_history: z.coerce.number().optional().describe('Maximum bars to save (default: all available). The tool stops requesting older history once this is reached.'),

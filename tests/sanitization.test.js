@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeString, requireFinite } from '../src/connection.js';
 import { setSymbol, setTimeframe, setType, manageIndicator, addKnownIndicator, setVisibleRange } from '../src/core/chart.js';
+import { sanitizeOutputBasename } from '../src/output-paths.js';
 import { drawShape } from '../src/core/drawing.js';
 
 // ── Mock helpers ─────────────────────────────────────────────────────────
@@ -417,13 +418,17 @@ describe('source audit — no unsafe interpolation patterns', () => {
 // ── Path traversal prevention ────────────────────────────────────────────
 
 describe('path traversal prevention', () => {
-  it('capture.js strips path separators from filename', () => {
-    const source = readFileSync(new URL('../src/core/capture.js', import.meta.url), 'utf8');
-    assert.ok(source.includes(".replace(/[\\/\\\\]/g, '_')"));
+  it('screenshot basename sanitation removes path traversal and Windows stream syntax', () => {
+    const name = sanitizeOutputBasename('../../nested\\file:payload');
+    assert.ok(!/[\\/:]/.test(name));
+    assert.ok(!name.includes('..'));
+    assert.equal(join('screenshots', name), 'screenshots' + (process.platform === 'win32' ? '\\' : '/') + name);
   });
 
-  it('batch.js strips path separators from filename', () => {
-    const source = readFileSync(new URL('../src/core/batch.js', import.meta.url), 'utf8');
-    assert.ok(source.includes(".replace(/[\\/\\\\]/g, '_')"));
+  it('batch SOURCE:TICKER basenames remain ordinary portable filenames', () => {
+    const name = sanitizeOutputBasename('batch_IDX:BBCA_../D_2026-01-01');
+    assert.ok(!/[<>:"/\\|?*]/.test(name));
+    assert.ok(!name.includes('..'));
+    assert.match(name, /^batch_IDX_BBCA_/);
   });
 });

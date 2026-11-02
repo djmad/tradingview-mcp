@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { createAuditLogger } from './audit-log.js';
 import { createSessionContext, runWithSessionContext } from './session-context.js';
 
@@ -208,30 +209,33 @@ export function applyPermissions(server, cfg, activity = null, options = {}) {
 }
 
 export function saveEnv(updates) {
-  let existing = {};
-  let raw = '';
-  if (existsSync(ENV_PATH)) {
-    raw = readFileSync(ENV_PATH, 'utf8');
-    existing = parseEnv(raw);
-  }
-  const merged = { ...existing, ...updates };
-  const lines = raw.split(/\r?\n/);
-  const seen = new Set();
-  const out = [];
-  for (const line of lines) {
-    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-    if (m && Object.prototype.hasOwnProperty.call(merged, m[1])) {
-      out.push(`${m[1]}=${merged[m[1]]}`);
-      seen.add(m[1]);
-    } else {
-      out.push(line);
+  for (const [key, value] of Object.entries(updates)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string' || /[\r\n\x00]/.test(value)) {
+      throw new Error('Configuration updates require valid keys and single-line text values');
     }
   }
-  for (const [k, v] of Object.entries(merged)) {
-    if (!seen.has(k)) out.push(`${k}=${v}`);
+  const exists = existsSync(ENV_PATH);
+  const raw = exists ? readFileSync(ENV_PATH, 'utf8') : '';
+  const newline = raw.includes('\r\n') ? '\r\n' : '\n';
+  const seen = new Set();
+  let output = raw.replace(/^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[^\r\n]*/gm, (line, key) => {
+    if (!Object.hasOwn(updates, key)) return line;
+    seen.add(key);
+    return `${key}=${updates[key]}`;
+  });
+  for (const [key, value] of Object.entries(updates)) {
+    if (seen.has(key)) continue;
+    if (output && !output.endsWith('\n')) output += newline;
+    output += `${key}=${value}${newline}`;
   }
-  while (out.length && out[out.length - 1] === '') out.pop();
-  writeFileSync(ENV_PATH, out.join('\n') + '\n');
+  const temporary = `${ENV_PATH}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, output, { flag: 'wx', mode: exists ? statSync(ENV_PATH).mode & 0o777 : 0o600 });
+    renameSync(temporary, ENV_PATH);
+  } catch (error) {
+    try { unlinkSync(temporary); } catch { /* Preserve the original write error. */ }
+    throw error;
+  }
 }
 
 export function configToEnv(cfg) {

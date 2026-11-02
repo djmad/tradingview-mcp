@@ -20,3 +20,6 @@ SHA256SUMS.txt
 *.jsonl.*
 
 screener/results/
+
+# Atomic configuration replacement files may contain private settings.
+.env.*.tmp

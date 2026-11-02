@@ -3,7 +3,7 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/capture.js';
 
 export function registerCaptureTools(server) {
-  server.tool('capture_screenshot', 'Take a screenshot of the TradingView chart', {
+  server.tool('capture_screenshot', 'Capture the TradingView chart. CDP PNG files use MCP_SCREENSHOT_DIR (default screenshots/); the native api method uses TradingView own save UI.', {
     region: z.string().optional().describe('Region to capture: full, chart, strategy_tester (default full)'),
     filename: z.string().optional().describe('Custom filename (without extension)'),
     method: z.string().optional().describe('Capture method: cdp (Page.captureScreenshot) or api (chartWidgetCollection.takeScreenshot) (default cdp)'),

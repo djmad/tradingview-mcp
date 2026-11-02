@@ -4,8 +4,8 @@
 import { evaluate, evaluateAsync, KNOWN_PATHS, safeString } from '../connection.js';
 import { setSymbol as chartSetSymbol, setTimeframe as chartSetTimeframe } from './chart.js';
 import { writeFileSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
+import { getOutputDirectory } from '../output-paths.js';
 
 const MAX_OHLCV_BARS = 5000;
 const MAX_TRADES = 20;
@@ -17,8 +17,6 @@ const roundPrice = (v) => (v == null ? null : Math.round(v * 1e8) / 1e8);
 const CHART_API = KNOWN_PATHS.chartApi;
 const BARS_PATH = KNOWN_PATHS.mainSeriesBars;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const OHLCV_DIR = join(dirname(dirname(__dirname)), 'OHLCV');
 // Serializes getQuote() calls that mutate chart symbol so concurrent callers
 // can't race over the shared chart state. JS is single-threaded but our
 // awaits interleave; without this every parallel quote_get(symbol) would
@@ -633,8 +631,8 @@ function isoDate(unixSec) {
   return new Date(unixSec * 1000).toISOString().slice(0, 10);
 }
 
-async function readBarsRange() {
-  return await evaluate(`
+async function readBarsRange(ev = evaluate) {
+  return await ev(`
     (function() {
       var bars = ${BARS_PATH};
       if (!bars || typeof bars.firstIndex !== 'function') return null;
@@ -653,8 +651,8 @@ async function readBarsRange() {
   `);
 }
 
-async function triggerHistoryLoad() {
-  await evaluate(`
+async function triggerHistoryLoad(ev = evaluate) {
+  await ev(`
     (function() {
       try {
         var ts = window.TradingViewApi._activeChartWidgetWV.value()._chartWidget.model().timeScale();
@@ -665,30 +663,34 @@ async function triggerHistoryLoad() {
   `);
 }
 
-export async function saveOhlcv({ symbol, timeframe, max_history, max_iterations, settle_ms } = {}) {
+export async function saveOhlcv({ symbol, timeframe, max_history, max_iterations, settle_ms, _deps } = {}) {
+  const ev = _deps?.evaluate || evaluate;
+  const setSymbol = _deps?.setSymbol || chartSetSymbol;
+  const setTimeframe = _deps?.setTimeframe || chartSetTimeframe;
+  const sleep = _deps?.sleep || (ms => new Promise(r => setTimeout(r, ms)));
   if (symbol) {
-    await chartSetSymbol({ symbol });
+    await setSymbol({ symbol });
   }
   if (timeframe) {
-    await chartSetTimeframe({ timeframe: String(timeframe) });
+    await setTimeframe({ timeframe: String(timeframe) });
   }
   if (symbol || timeframe) {
-    await new Promise(r => setTimeout(r, 800));
+    await sleep(800);
   }
 
   const cap = max_history || 0;
   const maxIters = max_iterations || 80;
   const settle = settle_ms || 800;
 
-  let prev = await readBarsRange();
+  let prev = await readBarsRange(ev);
   if (!prev) throw new Error('Could not read bars from chart. Is the chart loaded?');
 
   let stagnant = 0;
   for (let i = 0; i < maxIters; i++) {
     if (cap > 0 && prev.bar_count >= cap) break;
-    await triggerHistoryLoad();
-    await new Promise(r => setTimeout(r, settle));
-    const next = await readBarsRange();
+    await triggerHistoryLoad(ev);
+    await sleep(settle);
+    const next = await readBarsRange(ev);
     if (next.bar_count <= prev.bar_count) {
       stagnant++;
       if (stagnant >= 3) break;
@@ -698,7 +700,7 @@ export async function saveOhlcv({ symbol, timeframe, max_history, max_iterations
     prev = next;
   }
 
-  const meta = await evaluate(`
+  const meta = await ev(`
     (function() {
       var api = ${CHART_API};
       var sym = '';
@@ -709,7 +711,7 @@ export async function saveOhlcv({ symbol, timeframe, max_history, max_iterations
     })()
   `);
 
-  const all = await evaluate(`
+  const all = await ev(`
     (function() {
       var bars = ${BARS_PATH};
       var first = bars.firstIndex();
@@ -727,13 +729,14 @@ export async function saveOhlcv({ symbol, timeframe, max_history, max_iterations
 
   const trimmed = (cap > 0 && all.length > cap) ? all.slice(all.length - cap) : all;
 
-  mkdirSync(OHLCV_DIR, { recursive: true });
+  const directory = getOutputDirectory('ohlcv');
+  mkdirSync(directory, { recursive: true });
   const symPart = sanitizeFilenamePart(meta.symbol || symbol || 'UNKNOWN');
   const tfPart = sanitizeFilenamePart(meta.resolution || timeframe || '');
   const fromIso = isoDate(trimmed[0][0]);
   const toIso = isoDate(trimmed[trimmed.length - 1][0]);
   const fname = `${symPart}_${tfPart}_${fromIso}_${toIso}.csv`;
-  const filePath = join(OHLCV_DIR, fname);
+  const filePath = join(directory, fname);
 
   const header = 'time,datetime,open,high,low,close,volume\n';
   const lines = new Array(trimmed.length);
