@@ -1,6 +1,6 @@
 {
   "name": "tradingview-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP bridge for TradingView Desktop via Chrome DevTools Protocol",
   "type": "module",
   "main": "src/server.js",
@@ -12,18 +12,29 @@
     "./core": "./src/core/index.js"
   },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node src/server.js --http --tui",
+    "http": "node src/server.js --http --tui",
+    "stdio": "node src/server.js --stdio",
+    "sse": "node src/server.js --sse --tui",
+    "admin": "node src/server.js --admin",
     "tv": "node src/cli/index.js",
     "test": "node --test tests/e2e.test.js tests/pine_analyze.test.js",
     "test:e2e": "node --test tests/e2e.test.js",
-    "test:unit": "node --test tests/pine_analyze.test.js tests/cli.test.js",
+    "test:unit": "node --test --test-concurrency=1 tests/pine_analyze.test.js tests/data_quote.test.js tests/cli.test.js tests/transport.test.js tests/dashboard.test.js",
+    "test:transport": "node --test tests/transport.test.js",
     "test:cli": "node --test tests/cli.test.js",
     "test:all": "node --test tests/e2e.test.js tests/pine_analyze.test.js tests/cli.test.js",
     "test:verbose": "node --test --test-reporter=spec tests/e2e.test.js tests/pine_analyze.test.js",
     "test:count": "node --test --test-reporter=spec tests/e2e.test.js 2>&1 | tail -5"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "chrome-remote-interface": "^0.33.2"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "chrome-remote-interface": "0.33.3"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.12"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

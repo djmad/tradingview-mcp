@@ -14,7 +14,7 @@ export function registerDrawingTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('draw_list', 'List all shapes/drawings on the chart', {}, async () => {
+  server.tool('draw_list', 'List user drawings on the active chart as current {id,name} entities. IDs are required by drawing-specific tools and can become stale after layout/chart changes. Pine graphics are not included; use data_get_pine_graphics for those.', {}, async () => {
     try { return jsonResult(await core.listDrawings()); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
@@ -31,8 +31,8 @@ export function registerDrawingTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('draw_get_properties', 'Get properties and points of a specific drawing', {
-    entity_id: z.string().describe('Entity ID of the drawing (from draw_list)'),
+  server.tool('draw_get_properties', 'Read points, properties, visibility and available metadata for one existing user drawing. Requires an exact current ID from draw_list; a missing or stale ID fails.', {
+    entity_id: z.string().describe('Exact drawing id from a fresh draw_list response.'),
   }, async ({ entity_id }) => {
     try { return jsonResult(await core.getProperties({ entity_id })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }

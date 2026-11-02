@@ -3,7 +3,7 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/pane.js';
 
 export function registerPaneTools(server) {
-  server.tool('pane_list', 'List all chart panes in the current layout with their symbols and active state', {}, async () => {
+  server.tool('pane_list', 'Read panes in the current layout, including layout code/name, chart count, active_index and each pane symbol/state. Pane indices are 0-based and ephemeral; call again after any layout change before using an index.', {}, async () => {
     try { return jsonResult(await core.list()); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
@@ -24,7 +24,7 @@ export function registerPaneTools(server) {
 
   server.tool('pane_set_symbol', 'Set the symbol on a specific pane by index', {
     index: z.coerce.number().describe('Pane index (0-based)'),
-    symbol: z.string().describe('Symbol to set (e.g., NQ1!, ES1!, AAPL)'),
+    symbol: z.string().regex(/^[^:\s]+:[^:\s]+$/, 'Use SOURCE:TICKER').describe('Full SOURCE:TICKER, e.g. CME_MINI:NQ1!, CME_MINI:ES1! or NASDAQ:AAPL. If the source is unclear, call symbol_search first and use results[].full_name.'),
   }, async ({ index, symbol }) => {
     try { return jsonResult(await core.setSymbol({ index, symbol })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }

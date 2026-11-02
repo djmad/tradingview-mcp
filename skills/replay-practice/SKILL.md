@@ -1,58 +1,45 @@
 ---
 name: replay-practice
-description: Practice trading in TradingView replay mode — step through historical bars, take trades, track P&L. Use when the user wants to practice or backtest manually.
+description: Run guided manual trading practice in TradingView Bar Replay using historical OHLCV context, indicators, drawings, screenshots, simulated trades, and P&L review. Use for replay sessions, discretionary backtesting, trade-entry practice, or bar-by-bar strategy rehearsal.
 ---
 
-# Replay Practice Trading
+# TradingView Replay Practice
 
-You are guiding the user through replay-mode practice trading on TradingView.
+## Set up
 
-## Step 1: Setup
+1. Call `tv_health_check` and save the initial state with `chart_get_state`.
+2. Configure symbol and timeframe in one `chart_set` call.
+3. Load pre-session context with `data_get_ohlcv`; request enough bars to avoid look-ahead beyond the chosen replay date.
+4. Add approved studies with `chart_manage_indicator` and mark planned levels with `draw_shape`.
+5. Capture the starting state with `capture_screenshot`.
 
-1. `chart_set_symbol` — set the desired symbol
-2. `chart_set_timeframe` — set the trading timeframe
-3. `replay_start` with a date — enter replay mode at the starting point
+## Control replay
 
-## Step 2: Pre-Trade Analysis
+Use the single `replay` dispatcher:
 
-Before stepping through bars:
-1. `data_get_ohlcv` — get the historical context leading up to the replay point
-2. Add any indicators the user wants: `chart_manage_indicator`
-3. `capture_screenshot` — show the starting chart state
+- `{action: "start", date: "YYYY-MM-DD"}` to enter replay.
+- `{action: "step"}` to advance one bar.
+- `{action: "autoplay", speed: 100|143|200|300|1000|2000|3000|5000|10000}` to toggle autoplay and optionally set delay.
+- `{action: "status"}` to read date, position, and P&L.
+- `{action: "trade", trade_action: "buy"|"sell"|"close"}` to operate the simulated replay position.
+- `{action: "stop"}` to return to realtime.
 
-## Step 3: Step Through Bars
+Use only the `replay` dispatcher for every replay operation.
 
-Use `replay_step` to advance one bar at a time, or `replay_autoplay` for continuous play.
+## Practice loop
 
-After each significant move:
-1. `replay_status` — check current date, position, and P&L
-2. Announce what happened (breakout, support test, etc.)
+1. Read `replay` status before making a decision.
+2. Advance one bar or use controlled autoplay.
+3. Re-read chart evidence with `data_get_ohlcv`, `quote_get`, or `capture_screenshot` when needed.
+4. Record the setup, decision, entry, exit, and invalidation without using future bars.
+5. Confirm every simulated trade from the returned replay status.
 
-## Step 4: Execute Trades
+Use `draw_list` and `draw_get_properties` to review annotations. Use `draw_remove_one` for temporary marks; use `draw_clear` only with explicit confirmation.
 
-When the user identifies an entry:
-- `replay_trade` with action "buy" or "sell"
-- `replay_status` to confirm the position was opened
+## Finish
 
-When the user wants to exit:
-- `replay_trade` with action "close"
-- `replay_status` to show the P&L
-
-## Step 5: Review
-
-After the practice session:
-1. `replay_status` — final P&L summary
-2. `capture_screenshot` — capture the final chart state
-3. `replay_stop` — exit replay mode
-
-Report:
-- Total trades taken
-- Win/loss record
-- Net P&L
-- Key lessons from the session
-
-## Tips
-
-- Step through 5-10 bars at a time to find setups, then slow down for entry timing
-- Use `replay_autoplay` with speed control for faster scanning
-- Add drawings with `draw_shape` to mark entry/exit points for review
+1. Close any open replay position when requested.
+2. Capture the final chart.
+3. Call `replay` with `action=stop`, including after errors whenever possible.
+4. Restore the initial symbol and timeframe with `chart_set` if the session changed them.
+5. Report trades, P&L, process mistakes, rule adherence, and lessons. Treat replay results as practice evidence, not live-performance guarantees.

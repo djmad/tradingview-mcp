@@ -1,12 +1,57 @@
 /**
  * Core chart control logic.
  */
-import { evaluate, evaluateAsync } from '../connection.js';
-import { waitForChartReady } from '../wait.js';
+import { evaluate as _evaluate, evaluateAsync as _evaluateAsync, safeString, requireFinite } from '../connection.js';
+import { waitForChartReady as _waitForChartReady } from '../wait.js';
 
 const CHART_API = 'window.TradingViewApi._activeChartWidgetWV.value()';
 
-export async function getState() {
+export const KNOWN_INDICATORS = Object.freeze({
+  'MAExp@tv-basicstudies-274': {
+    title: 'Moving Average Exponential',
+    studyName: 'MAExp@tv-basicstudies-274',
+    signature: 'ssv1=undefined(9|close)',
+    addMethod: 'api',
+  },
+  'Volume@tv-basicstudies-274': {
+    title: 'Volume',
+    studyName: 'Volume@tv-basicstudies-274',
+    signature: 'ssv1=undefined(20|false)',
+    addMethod: 'api',
+  },
+  'PUB;8a91e8e55f4a434f9a60b56f5660c244': {
+    title: '[Mad] Triple Bollinger Bands MTF',
+    author: 'djmad',
+    studyName: 'Script@tv-scripting-101!',
+    signature: 'ssv1=PUB;8a91e8e55f4a434f9a60b56f5660c244(|20|1|2|3|false|4|false|5|true|true|true|true|false|90|false|500|true|0|true|35|close|-1|-1|-1|-1|-1|-1|false|false)',
+    addMethod: 'indicators-dialog',
+  },
+  'Script$STD;MACD@tv-scripting-101': {
+    title: 'Moving Average Convergence Divergence',
+    studyName: 'Script@tv-scripting-101!',
+    signature: 'ssv1=STD;MACD(close|12|26|9||true|false|false)',
+    section: 'TECHNICALS',
+    addMethod: 'indicators-dialog',
+  },
+  'Script$STD;RSI@tv-scripting-101': {
+    title: 'Relative Strength Index',
+    studyName: 'Script@tv-scripting-101!',
+    signature: 'ssv1=STD;RSI(14|close|false|14|2||true|false|false)',
+    section: 'TECHNICALS',
+    addMethod: 'indicators-dialog',
+  },
+});
+
+function _resolve(deps) {
+  return {
+    evaluate: deps?.evaluate || _evaluate,
+    evaluateAsync: deps?.evaluateAsync || _evaluateAsync,
+    waitForChartReady: deps?.waitForChartReady || _waitForChartReady,
+  };
+}
+
+export async function getState({ _deps } = {}) {
+  const { evaluate } = _resolve(_deps);
   const state = await evaluate(`
     (function() {
       var chart = ${CHART_API};
@@ -17,8 +62,14 @@ export async function getState() {
           return { id: s.id, name: s.name || s.title || 'unknown' };
         });
       } catch(e) {}
+      var sym = '';
+      try {
+        var ext = chart.symbolExt();
+        if (ext) sym = ext.full_name || ext.pro_name || ext.symbol || '';
+      } catch(e) {}
+      if (!sym) { try { sym = chart.symbol(); } catch(e) {} } // deprecated fallback
       return {
-        symbol: chart.symbol(),
+        symbol: sym,
         resolution: chart.resolution(),
         chartType: chart.chartType(),
         studies: studies,
@@ -28,12 +79,13 @@ export async function getState() {
   return { success: true, ...state };
 }
 
-export async function setSymbol({ symbol }) {
+export async function setSymbol({ symbol, _deps }) {
+  const { evaluateAsync, waitForChartReady } = _resolve(_deps);
   await evaluateAsync(`
     (function() {
       var chart = ${CHART_API};
       return new Promise(function(resolve) {
-        chart.setSymbol('${symbol.replace(/'/g, "\\'")}', {});
+        chart.setSymbol(${safeString(symbol)}, {});
         setTimeout(resolve, 500);
       });
     })()
@@ -42,25 +94,27 @@ export async function setSymbol({ symbol }) {
   return { success: true, symbol, chart_ready: ready };
 }
 
-export async function setTimeframe({ timeframe }) {
+export async function setTimeframe({ timeframe, _deps }) {
+  const { evaluate, waitForChartReady } = _resolve(_deps);
   await evaluate(`
     (function() {
       var chart = ${CHART_API};
-      chart.setResolution('${timeframe.replace(/'/g, "\\'")}', {});
+      chart.setResolution(${safeString(timeframe)}, {});
     })()
   `);
   const ready = await waitForChartReady(null, timeframe);
   return { success: true, timeframe, chart_ready: ready };
 }
 
-export async function setType({ chart_type }) {
+export async function setType({ chart_type, _deps }) {
+  const { evaluate } = _resolve(_deps);
   const typeMap = {
     'Bars': 0, 'Candles': 1, 'Line': 2, 'Area': 3,
     'Renko': 4, 'Kagi': 5, 'PointAndFigure': 6, 'LineBreak': 7,
     'HeikinAshi': 8, 'HollowCandles': 9,
   };
   const typeNum = typeMap[chart_type] ?? Number(chart_type);
-  if (isNaN(typeNum)) {
+  if (isNaN(typeNum) || typeNum < 0 || typeNum > 9 || !Number.isInteger(typeNum)) {
     throw new Error(`Unknown chart type: ${chart_type}. Use a name (Candles, Line, etc.) or number (0-9).`);
   }
   await evaluate(`
@@ -72,7 +126,8 @@ export async function setType({ chart_type }) {
   return { success: true, chart_type, type_num: typeNum };
 }
 
-export async function manageIndicator({ action, indicator, entity_id, inputs: inputsRaw }) {
+export async function manageIndicator({ action, indicator, entity_id, inputs: inputsRaw, _deps }) {
+  const { evaluate } = _resolve(_deps);
   const inputs = inputsRaw ? (typeof inputsRaw === 'string' ? JSON.parse(inputsRaw) : inputsRaw) : undefined;
 
   if (action === 'add') {
@@ -81,7 +136,7 @@ export async function manageIndicator({ action, indicator, entity_id, inputs: in
     await evaluate(`
       (function() {
         var chart = ${CHART_API};
-        chart.createStudy('${indicator.replace(/'/g, "\\'")}', false, false, ${JSON.stringify(inputArr)});
+        chart.createStudy(${safeString(indicator)}, false, false, ${JSON.stringify(inputArr)});
       })()
     `);
     await new Promise(r => setTimeout(r, 1500));
@@ -93,7 +148,7 @@ export async function manageIndicator({ action, indicator, entity_id, inputs: in
     await evaluate(`
       (function() {
         var chart = ${CHART_API};
-        chart.removeEntity('${entity_id.replace(/'/g, "\\'")}');
+        chart.removeEntity(${safeString(entity_id)});
       })()
     `);
     return { success: true, action: 'remove', entity_id };
@@ -102,7 +157,187 @@ export async function manageIndicator({ action, indicator, entity_id, inputs: in
   }
 }
 
-export async function getVisibleRange() {
+function knownStudySnapshotExpression() {
+  return `
+    (function() {
+      var chart = ${CHART_API};
+      var model = chart._chartWidget.model();
+      return chart.getAllStudies().map(function(item) {
+        var source = null;
+        try { source = model.dataSourceForId(item.id); } catch (e) {}
+        var studyName = null, signature = null;
+        try { studyName = source && source._studyName && source._studyName.value(); } catch (e) {}
+        try { signature = source && source._signature && source._signature.value(); } catch (e) {}
+        return { entity_id: item.id, title: item.name || item.title || 'unknown', study_name: studyName, signature: signature };
+      });
+    })()
+  `;
+}
+
+function matchingKnownStudy(studies, definition) {
+  return (studies || []).find(study =>
+    study.study_name === definition.studyName && study.signature === definition.signature
+  );
+}
+
+async function addFromIndicatorsDialog(evaluateAsync, definition) {
+  return evaluateAsync(`
+    (async function() {
+      var wanted = ${safeString(definition.title)};
+      var wantedSection = ${safeString(definition.section || '')};
+      var wantedAuthor = ${safeString(definition.author || '')}.toLowerCase();
+      var delay = function(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); };
+      var visible = function(el) {
+        if (!el) return false;
+        var r = el.getBoundingClientRect();
+        var s = window.getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      var text = function(el) { return (el.textContent || '').replace(/\\s+/g, ' ').trim(); };
+      var closeDialog = function() {
+        var close = Array.from(document.querySelectorAll('button[aria-label="Close"]')).find(visible);
+        if (close) close.click();
+        else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+      };
+
+      var search = Array.from(document.querySelectorAll('input[placeholder="Search"]')).find(visible) || null;
+      if (!search) {
+        var open = Array.from(document.querySelectorAll('button[data-name="open-indicators-dialog"]')).find(visible);
+        if (!open) throw new Error('TradingView Indicators button is not visible');
+        open.click();
+      }
+      for (var i = 0; i < 30 && !search; i++) {
+        search = Array.from(document.querySelectorAll('input[placeholder="Search"]')).find(visible);
+        if (!search) await delay(100);
+      }
+      if (!search) {
+        closeDialog();
+        throw new Error('TradingView Indicators search field did not open');
+      }
+
+      var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(search, wanted);
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      await delay(700);
+
+      var candidate = null;
+      for (var attempt = 0; attempt < 30 && !candidate; attempt++) {
+        var all = Array.from(document.querySelectorAll('div,span,h1,h2,h3,h4,h5,h6,p,[role="heading"]')).filter(visible);
+        var headings = wantedSection ? all.filter(function(el) { return text(el).toUpperCase() === wantedSection.toUpperCase(); }) : [];
+        var heading = headings.sort(function(a, b) {
+          return a.getBoundingClientRect().width - b.getBoundingClientRect().width;
+        })[0];
+        var matches = all.filter(function(el) {
+          return text(el) === wanted && !Array.from(el.children).some(function(child) { return text(child) === wanted; });
+        });
+        if (wantedSection && !heading) {
+          matches = [];
+        } else if (heading) {
+          var headingTop = heading.getBoundingClientRect().top;
+          matches = matches.filter(function(el) { return el.getBoundingClientRect().top > headingTop; });
+          matches.sort(function(a, b) {
+            return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+          });
+        }
+        if (wantedAuthor) {
+          matches = matches.filter(function(el) {
+            var node = el;
+            for (var depth = 0; node && depth < 7; depth++, node = node.parentElement) {
+              if (text(node).toLowerCase().includes(wantedAuthor)) return true;
+            }
+            return false;
+          });
+        }
+        candidate = matches[0] || null;
+        if (!candidate) await delay(100);
+      }
+      if (!candidate) {
+        closeDialog();
+        throw new Error('Exact Indicators result not found: ' + wanted + (wantedAuthor ? ' by ' + wantedAuthor : ''));
+      }
+
+      var row = candidate.closest('[role="row"], [data-role="list-item"], li') || candidate.parentElement;
+      (row || candidate).click();
+      await delay(500);
+
+      closeDialog();
+      return { clicked: true, title: wanted };
+    })()
+  `);
+}
+
+/**
+ * Idempotently add one exact, versioned TradingView built-in indicator.
+ * The stable full study ID is the input; the session-scoped entity ID is output only.
+ */
+export async function addKnownIndicator({ indicator_id, length, _deps }) {
+  const { evaluate, evaluateAsync } = _resolve(_deps);
+  const baseDefinition = KNOWN_INDICATORS[indicator_id];
+  if (!baseDefinition) {
+    throw new Error(`Unknown indicator_id: ${indicator_id}. Use one of: ${Object.keys(KNOWN_INDICATORS).join(', ')}`);
+  }
+
+  const isExponentialMovingAverage = indicator_id === 'MAExp@tv-basicstudies-274';
+  if (length !== undefined && !isExponentialMovingAverage) {
+    throw new Error('length is supported only for MAExp@tv-basicstudies-274');
+  }
+  const exponentialMovingAverageLength = isExponentialMovingAverage ? Number(length ?? 9) : null;
+  if (isExponentialMovingAverage && ![9, 21, 50, 200].includes(exponentialMovingAverageLength)) {
+    throw new Error('MAExp@tv-basicstudies-274 length must be one of: 9, 21, 50, 200');
+  }
+  const definition = isExponentialMovingAverage
+    ? {
+        ...baseDefinition,
+        signature: `ssv1=undefined(${exponentialMovingAverageLength}|close)`,
+        inputs: { length: exponentialMovingAverageLength, source: 'close' },
+      }
+    : baseDefinition;
+
+  const before = await evaluate(knownStudySnapshotExpression());
+  const existing = matchingKnownStudy(before, definition);
+  if (existing) {
+    return {
+      success: true,
+      action: 'reused',
+      indicator_id,
+      ...(isExponentialMovingAverage ? { length: exponentialMovingAverageLength, source: 'close' } : {}),
+      ...existing,
+      verified: true,
+    };
+  }
+
+  if (definition.addMethod === 'api') {
+    await evaluate(`
+      (function() {
+        ${CHART_API}.createStudy(${safeString(definition.title)}, false, false, ${JSON.stringify(definition.inputs || {})});
+      })()
+    `);
+  } else {
+    await addFromIndicatorsDialog(evaluateAsync, definition);
+  }
+
+  const timeoutAt = Date.now() + 10000;
+  while (Date.now() < timeoutAt) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const after = await evaluate(knownStudySnapshotExpression());
+    const added = matchingKnownStudy(after, definition);
+    if (added) {
+      return {
+        success: true,
+        action: 'added',
+        indicator_id,
+        ...(isExponentialMovingAverage ? { length: exponentialMovingAverageLength, source: 'close' } : {}),
+        ...added,
+        verified: true,
+      };
+    }
+  }
+
+  throw new Error(`TradingView did not create the exact requested study within 10 seconds: ${indicator_id}`);
+}
+
+export async function getVisibleRange({ _deps } = {}) {
+  const { evaluate } = _resolve(_deps);
   const result = await evaluate(`
     (function() {
       var chart = ${CHART_API};
@@ -112,7 +347,10 @@ export async function getVisibleRange() {
   return { success: true, visible_range: result.visible_range, bars_range: result.bars_range };
 }
 
-export async function setVisibleRange({ from, to }) {
+export async function setVisibleRange({ from, to, _deps }) {
+  const { evaluate } = _resolve(_deps);
+  const f = requireFinite(from, 'from');
+  const t = requireFinite(to, 'to');
   await evaluate(`
     (function() {
       var chart = ${CHART_API};
@@ -124,8 +362,8 @@ export async function setVisibleRange({ from, to }) {
       var fromIdx = startIdx, toIdx = endIdx;
       for (var i = startIdx; i <= endIdx; i++) {
         var v = bars.valueAt(i);
-        if (v && v[0] >= ${from} && fromIdx === startIdx) fromIdx = i;
-        if (v && v[0] <= ${to}) toIdx = i;
+        if (v && v[0] >= ${f} && fromIdx === startIdx) fromIdx = i;
+        if (v && v[0] <= ${t}) toIdx = i;
       }
       ts.zoomToBarsRange(fromIdx, toIdx);
     })()
@@ -141,7 +379,8 @@ export async function setVisibleRange({ from, to }) {
   return { success: true, requested: { from, to }, actual: actual || { from: 0, to: 0 } };
 }
 
-export async function scrollToDate({ date }) {
+export async function scrollToDate({ date, _deps } = {}) {
+  const { evaluate } = _resolve(_deps);
   let timestamp;
   if (/^\d+$/.test(date)) timestamp = Number(date);
   else timestamp = Math.floor(new Date(date).getTime() / 1000);
@@ -180,7 +419,8 @@ export async function scrollToDate({ date }) {
   return { success: true, date, centered_on: timestamp, resolution, window: { from, to } };
 }
 
-export async function symbolInfo() {
+export async function symbolInfo({ _deps } = {}) {
+  const { evaluate } = _resolve(_deps);
   const result = await evaluate(`
     (function() {
       var chart = ${CHART_API};

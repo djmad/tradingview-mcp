@@ -1,12 +1,19 @@
 /**
  * Core data access logic.
  */
-import { evaluate, evaluateAsync, KNOWN_PATHS } from '../connection.js';
+import { evaluate, evaluateAsync, KNOWN_PATHS, safeString } from '../connection.js';
+import { setSymbol as chartSetSymbol, setTimeframe as chartSetTimeframe } from './chart.js';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const MAX_OHLCV_BARS = 500;
+const MAX_OHLCV_BARS = 5000;
 const MAX_TRADES = 20;
 const CHART_API = KNOWN_PATHS.chartApi;
 const BARS_PATH = KNOWN_PATHS.mainSeriesBars;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const OHLCV_DIR = join(dirname(dirname(__dirname)), 'OHLCV');
 
 function buildGraphicsJS(collectionName, mapKey, filter) {
   return `
@@ -15,7 +22,7 @@ function buildGraphicsJS(collectionName, mapKey, filter) {
       var model = chart.model();
       var sources = model.model().dataSources();
       var results = [];
-      var filter = '${filter}';
+      var filter = ${safeString(filter || '')};
       for (var si = 0; si < sources.length; si++) {
         var s = sources[si];
         if (!s.metaInfo) continue;
@@ -110,8 +117,8 @@ export async function getIndicator({ entity_id }) {
   const data = await evaluate(`
     (function() {
       var api = ${CHART_API};
-      var study = api.getStudyById('${entity_id}');
-      if (!study) return { error: 'Study not found: ${entity_id}' };
+      var study = api.getStudyById(${safeString(entity_id)});
+      if (!study) return { error: 'Study not found: ' + ${safeString(entity_id)} };
       var result = { name: null, inputs: null, visible: null };
       try { result.visible = study.isVisible(); } catch(e) {}
       try { result.inputs = study.getInputValues(); } catch(e) { result.inputs_error = e.message; }
@@ -242,15 +249,17 @@ export async function getEquity() {
   return { success: true, data_points: equity?.data?.length || 0, source: equity?.source, data: equity?.data || [], equity_summary: equity?.equity_summary, note: equity?.note, error: equity?.error };
 }
 
-export async function getQuote({ symbol } = {}) {
-  const data = await evaluate(`
+export async function getQuote({ symbol, _deps } = {}) {
+  const evaluatePage = _deps?.evaluate || evaluate;
+  const data = await evaluatePage(`
     (function() {
       var api = ${CHART_API};
-      var sym = '${symbol || ''}';
-      if (!sym) { try { sym = api.symbol(); } catch(e) {} }
-      if (!sym) { try { sym = api.symbolExt().symbol; } catch(e) {} }
       var ext = {};
       try { ext = api.symbolExt() || {}; } catch(e) {}
+      var apiSym = '';
+      try { apiSym = api.symbol() || ''; } catch(e) {}
+      var candidates = [ext.full_name, ext.pro_name, apiSym, ext.symbol].filter(Boolean);
+      var sym = candidates.find(function(value) { return String(value).indexOf(':') > 0; }) || candidates[0] || '';
       var bars = ${BARS_PATH};
       var quote = { symbol: sym };
       if (bars && typeof bars.lastIndex === 'function') {
@@ -274,6 +283,14 @@ export async function getQuote({ symbol } = {}) {
     })()
   `);
   if (!data || (!data.last && !data.close)) throw new Error('Could not retrieve quote. The chart may still be loading.');
+  const requested = String(symbol || '').trim().toUpperCase();
+  const active = String(data.symbol || '').trim().toUpperCase();
+  if (requested && !requested.includes(':')) {
+    throw new Error(`Invalid symbol "${symbol}". TradingView symbols must use SOURCE:TICKER, for example "NASDAQ:AAPL" or "INDEX:BTCUSD".`);
+  }
+  if (requested && requested !== active) {
+    throw new Error(`Requested symbol "${symbol}" is not the active chart symbol "${data.symbol}". quote_get is read-only and never switches charts. Resolve a full SOURCE:TICKER with symbol_search, then use chart_set if changing the chart is authorized.`);
+  }
   return { success: true, ...data };
 }
 
@@ -451,4 +468,133 @@ export async function getPineBoxes({ study_filter, verbose } = {}) {
     return result;
   });
   return { success: true, study_count: studies.length, studies };
+}
+
+function sanitizeFilenamePart(s) {
+  return String(s).replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+function isoDate(unixSec) {
+  if (unixSec == null) return 'unknown';
+  return new Date(unixSec * 1000).toISOString().slice(0, 10);
+}
+
+async function readBarsRange() {
+  return await evaluate(`
+    (function() {
+      var bars = ${BARS_PATH};
+      if (!bars || typeof bars.firstIndex !== 'function') return null;
+      var first = bars.firstIndex();
+      var last = bars.lastIndex();
+      var firstBar = bars.valueAt(first);
+      var lastBar = bars.valueAt(last);
+      return {
+        first_index: first,
+        last_index: last,
+        bar_count: last - first + 1,
+        first_time: firstBar ? firstBar[0] : null,
+        last_time: lastBar ? lastBar[0] : null
+      };
+    })()
+  `);
+}
+
+async function triggerHistoryLoad() {
+  await evaluate(`
+    (function() {
+      try {
+        var ts = window.TradingViewApi._activeChartWidgetWV.value()._chartWidget.model().timeScale();
+        ts.scrollToFirstBar();
+        ts._throttleRequestMoreDataOnScroll();
+      } catch(e) {}
+    })()
+  `);
+}
+
+export async function saveOhlcv({ symbol, timeframe, max_history, max_iterations, settle_ms } = {}) {
+  if (symbol) {
+    await chartSetSymbol({ symbol });
+  }
+  if (timeframe) {
+    await chartSetTimeframe({ timeframe: String(timeframe) });
+  }
+  if (symbol || timeframe) {
+    await new Promise(r => setTimeout(r, 800));
+  }
+
+  const cap = max_history || 0;
+  const maxIters = max_iterations || 80;
+  const settle = settle_ms || 800;
+
+  let prev = await readBarsRange();
+  if (!prev) throw new Error('Could not read bars from chart. Is the chart loaded?');
+
+  let stagnant = 0;
+  for (let i = 0; i < maxIters; i++) {
+    if (cap > 0 && prev.bar_count >= cap) break;
+    await triggerHistoryLoad();
+    await new Promise(r => setTimeout(r, settle));
+    const next = await readBarsRange();
+    if (next.bar_count <= prev.bar_count) {
+      stagnant++;
+      if (stagnant >= 3) break;
+    } else {
+      stagnant = 0;
+    }
+    prev = next;
+  }
+
+  const meta = await evaluate(`
+    (function() {
+      var api = ${CHART_API};
+      var sym = '';
+      try { sym = api.symbol(); } catch(e) {}
+      var res = '';
+      try { res = api.resolution(); } catch(e) {}
+      return { symbol: sym, resolution: res };
+    })()
+  `);
+
+  const all = await evaluate(`
+    (function() {
+      var bars = ${BARS_PATH};
+      var first = bars.firstIndex();
+      var last = bars.lastIndex();
+      var out = [];
+      for (var i = first; i <= last; i++) {
+        var v = bars.valueAt(i);
+        if (v) out.push([v[0], v[1], v[2], v[3], v[4], v[5] || 0]);
+      }
+      return out;
+    })()
+  `);
+
+  if (!all || all.length === 0) throw new Error('No bars available to save.');
+
+  const trimmed = (cap > 0 && all.length > cap) ? all.slice(all.length - cap) : all;
+
+  mkdirSync(OHLCV_DIR, { recursive: true });
+  const symPart = sanitizeFilenamePart(meta.symbol || symbol || 'UNKNOWN');
+  const tfPart = sanitizeFilenamePart(meta.resolution || timeframe || '');
+  const fromIso = isoDate(trimmed[0][0]);
+  const toIso = isoDate(trimmed[trimmed.length - 1][0]);
+  const fname = `${symPart}_${tfPart}_${fromIso}_${toIso}.csv`;
+  const filePath = join(OHLCV_DIR, fname);
+
+  const header = 'time,datetime,open,high,low,close,volume\n';
+  const lines = new Array(trimmed.length);
+  for (let i = 0; i < trimmed.length; i++) {
+    const b = trimmed[i];
+    lines[i] = `${b[0]},${new Date(b[0] * 1000).toISOString()},${b[1]},${b[2]},${b[3]},${b[4]},${b[5]}`;
+  }
+  writeFileSync(filePath, header + lines.join('\n') + '\n', 'utf8');
+
+  return {
+    success: true,
+    file: filePath,
+    symbol: meta.symbol,
+    timeframe: meta.resolution,
+    bar_count: trimmed.length,
+    period: { from: trimmed[0][0], to: trimmed[trimmed.length - 1][0], from_iso: fromIso, to_iso: toIso },
+  };
 }

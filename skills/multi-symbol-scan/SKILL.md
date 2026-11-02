@@ -1,64 +1,53 @@
 ---
 name: multi-symbol-scan
-description: Scan multiple symbols for setups, patterns, or strategy performance. Use when comparing across instruments or screening for opportunities.
+description: Scan, compare, and organize multiple TradingView symbols or timeframes using watchlists, batch actions, OHLCV data, saved CSV exports, layouts, panes, and tabs. Use for screeners, cross-asset comparisons, multi-timeframe reviews, watchlist analysis, or bulk chart evidence collection.
 ---
 
-# Multi-Symbol Scanner
+# Multi-Symbol Scan
 
-You are scanning multiple symbols for trading setups or comparing performance.
+## Define the scan
 
-## Step 1: Define the Scan
+1. Call `tv_health_check` and `chart_get_state`.
+2. Get candidates from the user, `watchlist_get`, or `symbol_search`.
+3. Represent every candidate as `SOURCE:TICKER`. When the source/exchange is unclear, use `symbol_search` and select `results[].full_name` by exchange, type, and description; never guess the source.
+4. Define symbols, timeframes, ranking criteria, maximum bar count, and whether the scan may change the active chart.
+5. Preserve the starting symbol and timeframe so they can be restored with `chart_set`.
 
-Determine:
-- **Symbols**: Which instruments to scan (user-provided or watchlist via `watchlist_get`)
-- **Timeframe**: Which timeframe to analyze
-- **Criteria**: What to look for (indicator values, strategy results, visual patterns)
+## Choose the execution path
 
-## Step 2: Run the Scan
+Use `batch_run` for supported repeated actions:
 
-### For Strategy Performance Comparison
-Use `batch_run` with action `get_strategy_results`:
-```
-symbols: ["ES1!", "NQ1!", "YM1!", "RTY1!"]
-timeframes: ["15"]
-action: "get_strategy_results"
-```
+- `action=screenshot` for visual evidence.
+- `action=get_ohlcv` with `ohlcv_count` for bar-based screening.
+- `action=get_strategy_results` for strategy comparisons.
 
-### For Screenshot Comparison
-Use `batch_run` with action `screenshot`:
-```
-symbols: ["AAPL", "MSFT", "GOOGL", "AMZN"]
-timeframes: ["D"]
-action: "screenshot"
-```
+Set a realistic `delay_ms` so TradingView can load each symbol and timeframe. Treat partial failures as per-item results, not as evidence that the entire scan succeeded.
 
-### For Custom Analysis (per-symbol)
-Loop through symbols manually:
-1. `chart_set_symbol` + `chart_set_timeframe`
-2. `chart_manage_indicator` — add the study
-3. `data_get_ohlcv` — pull price data
-4. `data_get_indicator` — read indicator values
-5. Analyze and record findings
+Use a manual loop when criteria need tools outside `batch_run`:
 
-## Step 3: Compile Results
+1. Set symbol and timeframe together with `chart_set`.
+2. Read `quote_get`, `data_get_ohlcv`, `data_get_study_values`, or `data_get_strategy_results` as required.
+3. Capture only shortlisted charts with `capture_screenshot`.
+4. Restore the original chart state.
 
-Build a comparison table:
-| Symbol | Key Metric 1 | Key Metric 2 | Signal |
-|--------|-------------|-------------|--------|
+## OHLCV workflows
 
-Sort by the most relevant metric.
+- Use `data_get_ohlcv` for in-context analysis. Start with `summary=true`, then fetch raw bars only for candidates requiring calculations.
+- Use `data_save_ohlcv` when the user wants durable CSV history. Specify `symbol`, `timeframe`, and bounded `max_history`; increase `settle_ms` on slow charts.
+- Record the returned path, actual bar count, symbol, timeframe, and date coverage. Never imply that TradingView loaded more history than the returned result confirms.
 
-## Step 4: Report
+## Organize TradingView views
 
-Present findings:
-- Ranked list of symbols by the scan criteria
-- Highlight the strongest setups
-- Note any divergences or anomalies
-- Screenshot the top 1-2 charts for visual confirmation
+- Use `layout_list` before `layout_switch`; switch only to a user-approved saved layout.
+- Use `pane_list` before changing a multi-chart grid.
+- Use `pane_set_layout`, then `pane_set_symbol`, and use `pane_focus` before operations that apply to the active pane.
+- Use `tab_list` before tab operations. Use `tab_new` and `tab_switch` for parallel views; use `tab_close` only after confirming the target tab.
 
-## Watchlist Integration
+## Watchlist actions
 
-To scan the user's watchlist:
-1. `watchlist_get` — read all symbols
-2. Use the symbol list for the scan
-3. `watchlist_add` — add new finds to the watchlist
+- Use `watchlist_get` to source or verify the scan universe.
+- Use `watchlist_add` only when the user asks to persist a symbol; avoid duplicates when the symbol is already present.
+
+## Report
+
+Return a ranked table containing symbol, exchange-qualified identifier, timeframe, price or OHLCV window, relevant metrics, signal, and caveats. Separate missing data from negative signals and identify the exact scan time.

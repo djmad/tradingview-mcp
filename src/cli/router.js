@@ -55,7 +55,8 @@ export async function run(argv) {
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     printHelp();
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
   const cmdName = args[0];
@@ -64,7 +65,8 @@ export async function run(argv) {
   if (!cmd) {
     console.error(`Unknown command: ${cmdName}`);
     console.error('Run "tv --help" for a list of commands.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   // Handle subcommands (e.g., tv pine get)
@@ -73,13 +75,15 @@ export async function run(argv) {
     const subName = args[1];
     if (!subName || subName === '--help' || subName === '-h') {
       printCommandHelp(cmdName, cmd);
-      process.exit(0);
+      process.exitCode = 0;
+      return;
     }
     const sub = cmd.subcommands.get(subName);
     if (!sub) {
       console.error(`Unknown subcommand: ${cmdName} ${subName}`);
       printCommandHelp(cmdName, cmd);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     handler = sub.handler;
     options = sub.options || {};
@@ -101,7 +105,8 @@ export async function run(argv) {
             console.log(`  ${flag.padEnd(20)}${v.description || ''}`);
           }
         }
-        process.exit(0);
+        process.exitCode = 0;
+        return;
       }
       await execute(handler, values, positionals);
     } catch (err) {
@@ -119,7 +124,8 @@ export async function run(argv) {
       });
       if (values.help) {
         printCommandHelp(cmdName, cmd);
-        process.exit(0);
+        process.exitCode = 0;
+        return;
       }
       await execute(handler, values, positionals);
     } catch (err) {
@@ -132,7 +138,7 @@ async function execute(handler, values, positionals) {
   try {
     const result = await handler(values, positionals);
     console.log(JSON.stringify(result, null, 2));
-    process.exit(0);
+    process.exitCode = 0;
   } catch (err) {
     handleError(err);
   }
@@ -143,8 +149,9 @@ function handleError(err) {
   // Connection failures get exit code 2
   if (/CDP|connection|ECONNREFUSED|not running/i.test(message)) {
     console.error(JSON.stringify({ success: false, error: message }, null, 2));
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
   console.error(JSON.stringify({ success: false, error: message }, null, 2));
-  process.exit(1);
+  process.exitCode = 1;
 }

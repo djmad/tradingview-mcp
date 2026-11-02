@@ -24,7 +24,7 @@ export function registerUiTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('layout_list', 'List saved chart layouts', {}, async () => {
+  server.tool('layout_list', 'Read all saved chart layouts available to the signed-in account. Output can be large. Inspect count and error because TradingView may return success=true with an empty list plus an API error.', {}, async () => {
     try { return jsonResult(await core.layoutList()); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
@@ -77,8 +77,8 @@ export function registerUiTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('ui_find_element', 'Find UI elements by text, aria-label, or CSS selector and return their positions', {
-    query: z.string().describe('Text content, aria-label value, or CSS selector to search for'),
+  server.tool('ui_find_element', 'Read up to 20 matching DOM elements and return their text/labels, screen bounds and visibility for later UI actions. It does not click. Choose text, exact aria-label or valid CSS; malformed CSS returns an error.', {
+    query: z.string().describe('Text substring, exact aria-label value, or valid CSS selector according to strategy.'),
     strategy: z.enum(['text', 'aria-label', 'css']).optional().describe('Search strategy (default: text)'),
   }, async ({ query, strategy }) => {
     try { return jsonResult(await core.findElement({ query, strategy })); }

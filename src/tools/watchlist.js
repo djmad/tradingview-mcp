@@ -3,13 +3,13 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/watchlist.js';
 
 export function registerWatchlistTools(server) {
-  server.tool('watchlist_get', 'Get all symbols from the current TradingView watchlist with last price, change, and change%', {}, async () => {
+  server.tool('watchlist_get', 'Read rows currently rendered in the active TradingView watchlist panel, including SOURCE:TICKER symbol when exposed, last price and change. The panel must be open/rendered; panel_closed with count=0 does not prove the saved watchlist is empty.', {}, async () => {
     try { return jsonResult(await core.get()); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
   server.tool('watchlist_add', 'Add a symbol to the TradingView watchlist', {
-    symbol: z.string().describe('Symbol to add (e.g., AAPL, BTCUSD, ES1!, NYMEX:CL1!)'),
+    symbol: z.string().regex(/^[^:\s]+:[^:\s]+$/, 'Use SOURCE:TICKER').describe('Full SOURCE:TICKER, e.g. NASDAQ:AAPL, INDEX:BTCUSD, CME_MINI:ES1! or NYMEX:CL1!. If the source is unclear, call symbol_search first and use results[].full_name.'),
   }, async ({ symbol }) => {
     try { return jsonResult(await core.add({ symbol })); }
     catch (err) {

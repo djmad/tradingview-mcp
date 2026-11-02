@@ -1,78 +1,46 @@
 ---
 name: pine-develop
-description: Full Pine Script development loop — write code, compile, fix errors, iterate. Use when building a new indicator or strategy in TradingView.
+description: Create, inspect, edit, validate, compile, save, and verify Pine Script indicators, strategies, or libraries in TradingView. Use for new Pine development, modifications, compiler-error repair, study input changes, runtime debugging, or extracting graphics and values from custom studies.
 ---
 
-# Pine Script Development Loop
+# Pine Script Development
 
-You are developing a Pine Script indicator or strategy in TradingView. Follow this loop precisely.
+## Prepare
 
-## Step 1: Understand the Goal
+1. Call `tv_health_check` and `chart_get_state`.
+2. Use `pine_list_scripts` to discover saved scripts and `pine_open` to open the requested one.
+3. Use `pine_new` for a new `indicator`, `strategy`, or `library` only after the type is clear.
+4. Open the editor with `ui_open_panel` when required.
 
-If not already clear, ask the user:
-- What type? (indicator, strategy, library)
-- What does it do? (entry/exit logic, overlay, oscillator, etc.)
-- Overlay or separate pane?
-- Any specific inputs or visual elements?
+## Read and validate
 
-## Step 2: Pull Current Source (if modifying)
+- Use `pine_edit` with `action=get_source` only when the source is needed; large scripts can exceed 200 KB.
+- Use `action=analyze` for offline static checks before touching the editor.
+- Use `action=check` for server-side compilation validation without changing the editor or chart.
+- Preserve the complete source and keep `//@version=6` unless the user explicitly targets another version.
 
-If modifying an existing script:
-```bash
-node scripts/pine_pull.js
-```
-Then read `scripts/current.pine` to understand what's there.
+## Edit and compile
 
-If creating new: start from scratch.
+1. Call `pine_edit` with `action=set_source` and the complete source.
+2. Call `pine_edit` with `action=smart_compile`.
+3. Read compiler diagnostics with `action=get_errors` and runtime output with `action=get_console`.
+4. Fix the specific diagnostics and repeat until compilation is clean.
+5. Call `action=save` only when the user wants the TradingView copy persisted.
 
-## Step 3: Write the Pine Script
+Use `action=compile` only when the simpler compile click is specifically needed; prefer `smart_compile` for verification.
 
-Write the complete script to `scripts/current.pine`. Every script MUST include:
-- `//@version=6` header
-- Proper `indicator()` or `strategy()` declaration
-- All user inputs with `input.*()` functions and groups
-- Clear comments for each logical section
+## Verify on the chart
 
-For strategies, include:
-- `strategy.entry()` and `strategy.exit()` calls
-- Position sizing via `strategy()` declaration
-- Default commission and slippage settings
+- Use `chart_get_state` to identify the created study entity.
+- Use `data_get_indicator` for inputs and metadata.
+- Use `indicator_set_inputs` to change inputs and `indicator_toggle_visibility` to verify visible/hidden behavior.
+- Use `data_get_study_values` for plotted values.
+- Use `data_get_pine_graphics` with a narrow `study_filter` to inspect lines, labels, tables, and boxes.
+- Use `capture_screenshot` for visual verification.
+- For strategies, collect `data_get_strategy_results`, `data_get_trades`, and `data_get_equity`.
 
-## Step 4: Push and Compile
+## UI fallback
 
-```bash
-node scripts/pine_push.js
-```
+Use `tv_ui_state` and `ui_find_element` before `ui_click`, `ui_keyboard`, or `ui_type_text`. Use `ui_evaluate` only when semantic Pine and UI tools cannot complete the task, and keep it read-only unless mutation is explicitly authorized.
 
-This injects the code into TradingView's Pine Editor, clicks compile, and reports any errors.
-
-## Step 5: Fix Errors
-
-If errors are reported:
-1. Read the error messages (line number + description)
-2. Edit `scripts/current.pine` locally — fix the specific lines
-3. Push again: `node scripts/pine_push.js`
-4. Repeat until 0 errors
-
-Common Pine Script errors:
-- **"Mismatched input"** — usually indentation (Pine uses 4-space indentation, not braces)
-- **"Could not find function or function reference"** — typo in function name or wrong version
-- **"Undeclared identifier"** — variable used before declaration
-- **"Cannot call X with argument type Y"** — wrong parameter type
-
-## Step 6: Verify on Chart
-
-After clean compilation:
-1. `capture_screenshot` — take a screenshot to verify it looks right
-2. `data_get_strategy_results` — if it's a strategy, check performance
-3. Show the user the results
-
-## Step 7: Iterate
-
-If the user wants changes:
-1. Pull fresh: `node scripts/pine_pull.js` (in case TV modified anything)
-2. Edit locally
-3. Push + compile
-4. Screenshot to verify
-
-IMPORTANT: Always compile after every change. Never claim "done" without a clean compile.
+Never claim completion without a clean compile result and chart-level verification appropriate to the script type.

@@ -12,7 +12,7 @@
  * - Drawing (5 tools)
  * - UI Automation (12 tools)
  * - Replay Mode (6 tools)
- * - Alerts (3 tools)
+ * - Alerts (4 tools)
  * - Watchlist (2 tools)
  * - Indicators (2 tools)
  * - Batch (1 tool)
@@ -1244,7 +1244,7 @@ val = array.get(a, 5)`;
     });
   });
 
-  // ─── 8. ALERTS (3 tools) ──────────────────────────────────────────────
+  // ─── 8. ALERTS (4 tools: create, modify, list, delete) ───────────────
 
   describe('Alerts', () => {
 

@@ -4,7 +4,7 @@ import * as core from '../core/batch.js';
 
 export function registerBatchTools(server) {
   server.tool('batch_run', 'Run an action across multiple symbols and/or timeframes', {
-    symbols: z.array(z.string()).describe('Array of symbols to iterate (e.g., ["BTCUSD", "ETHUSD", "AAPL"])'),
+    symbols: z.array(z.string().regex(/^[^:\s]+:[^:\s]+$/, 'Use SOURCE:TICKER')).describe('Full SOURCE:TICKER values only, e.g. ["INDEX:BTCUSD", "BINANCE:ETHUSDT", "NASDAQ:AAPL"]. Resolve every unclear or ambiguous source with symbol_search first and use results[].full_name.'),
     timeframes: z.array(z.string()).optional().describe('Array of timeframes (e.g., ["D", "60", "15"])'),
     action: z.string().describe('Action to run: screenshot, get_ohlcv, get_strategy_results'),
     delay_ms: z.coerce.number().optional().describe('Delay between iterations in ms (default 2000)'),

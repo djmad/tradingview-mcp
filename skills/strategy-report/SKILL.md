@@ -1,83 +1,39 @@
 ---
 name: strategy-report
-description: Generate a comprehensive strategy performance report — metrics, trade analysis, equity curve, and recommendations. Use after backtesting a Pine Script strategy.
+description: Produce a structured TradingView strategy report with tester metrics, trades, equity, OHLCV regime context, screenshots, findings, and recommendations. Use after a Pine strategy backtest when the user wants a reusable written assessment or comparison-ready report.
 ---
 
-# Strategy Performance Report
+# TradingView Strategy Report
 
-You are generating a detailed performance report for a Pine Script strategy on TradingView.
+## Collect the report package
 
-## Step 1: Gather Data
+1. Call `tv_health_check`, `chart_get_state`, and `symbol_info`.
+2. Collect `data_get_strategy_results`, `data_get_trades`, and `data_get_equity`.
+3. Add `data_get_ohlcv` context for the tested market window. Use raw bars only when calculating statistics; otherwise use `summary=true`.
+4. Read `data_get_study_values` or `data_get_pine_graphics` when the strategy's visible filters or annotations are material.
+5. Capture `region=chart` and `region=strategy_tester` with `capture_screenshot`.
+6. Use `data_save_ohlcv` only when the user requests a CSV appendix or reproducible dataset; record the returned coverage and bar count.
 
-Collect all available performance data:
-1. `data_get_strategy_results` — overall metrics (net profit, win rate, profit factor, etc.)
-2. `data_get_trades` — individual trade list (max 20)
-3. `data_get_equity` — equity curve data points
-4. `chart_get_state` — current symbol, timeframe, and studies on chart
-5. `symbol_info` — symbol metadata for context
+## Analyze without inventing data
 
-## Step 2: Capture Visuals
+- Use TradingView-reported values for net profit, return, total trades, win rate, profit factor, drawdown, average trade, and other tester fields.
+- Derive winner/loser statistics only from the returned trade sample and label sample-limited calculations.
+- Assess equity shape from returned points; identify prolonged drawdowns and profit concentration.
+- Relate results to OHLCV regime, volatility, trend, and timeframe without claiming causality unsupported by the data.
+- Flag small samples, missing metrics, possible overfitting, and strategy settings that were not captured.
 
-1. `capture_screenshot` with region "chart" — the chart with strategy overlay
-2. `capture_screenshot` with region "strategy_tester" — the Strategy Tester panel
+## Write the report
 
-## Step 3: Analyze
+Use this structure:
 
-### Key Metrics
-Report these if available:
-- **Net Profit** and **% return**
-- **Total Trades** and **Win Rate**
-- **Profit Factor** (target > 1.5)
-- **Max Drawdown** ($ and %)
-- **Average Trade** ($ and %)
-- **Sharpe Ratio** if available
-- **Max Consecutive Losses**
+1. Strategy, symbol, timeframe, and tested period.
+2. Executive summary and confidence level.
+3. Key metrics table with data source.
+4. Trade-distribution findings.
+5. Equity and drawdown assessment.
+6. OHLCV market-regime context.
+7. Strengths, weaknesses, and failure modes.
+8. Prioritized recommendations and concrete validation steps.
+9. Evidence paths and limitations.
 
-### Trade Analysis
-From the trade list:
-- Largest winner and largest loser
-- Average winner vs average loser (reward:risk)
-- Long vs short performance breakdown
-- Time in market
-
-### Equity Curve Assessment
-- Is it smooth and upward-sloping?
-- Any extended drawdown periods?
-- Does it show consistency or was profit front/back-loaded?
-
-## Step 4: Generate Report
-
-Format as a structured report:
-
-```
-## Strategy Report: [Strategy Name]
-**Symbol:** [symbol] | **Timeframe:** [tf] | **Period:** [date range]
-
-### Summary
-[1-2 sentence overview of performance]
-
-### Key Metrics
-| Metric | Value |
-|--------|-------|
-| Net Profit | ... |
-| Win Rate | ... |
-| Profit Factor | ... |
-| Max Drawdown | ... |
-
-### Strengths
-- [bullet points]
-
-### Weaknesses
-- [bullet points]
-
-### Recommendations
-- [specific actionable improvements]
-```
-
-## Step 5: Suggest Improvements
-
-Based on the analysis:
-- If win rate < 50% but profit factor > 1: suggest tighter entries
-- If max drawdown > 20%: suggest position sizing or stop loss adjustments
-- If profit factor < 1.2: suggest the strategy may need fundamental changes
-- If few trades: suggest widening the lookback or loosening entry criteria
+Keep performance analysis separate from financial advice. Never extrapolate a backtest into guaranteed live returns.

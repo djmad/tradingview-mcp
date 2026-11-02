@@ -3,41 +3,29 @@ import { jsonResult } from './_format.js';
 import * as core from '../core/pine.js';
 
 export function registerPineTools(server) {
-  server.tool('pine_get_source', 'Get current Pine Script source code from the editor', {}, async () => {
-    try { return jsonResult(await core.getSource()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_set_source', 'Set Pine Script source code in the editor', {
-    source: z.string().describe('Pine Script source code to inject'),
-  }, async ({ source }) => {
-    try { return jsonResult(await core.setSource({ source })); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_compile', 'Compile / add the current Pine Script to the chart', {}, async () => {
-    try { return jsonResult(await core.compile()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_get_errors', 'Get Pine Script compilation errors from Monaco markers', {}, async () => {
-    try { return jsonResult(await core.getErrors()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_save', 'Save the current Pine Script (Ctrl+S)', {}, async () => {
-    try { return jsonResult(await core.save()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_get_console', 'Read Pine Script console/log output (compile messages, log.info(), errors)', {}, async () => {
-    try { return jsonResult(await core.getConsole()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_smart_compile', 'Intelligent compile: detects button, compiles, checks errors, reports study changes', {}, async () => {
-    try { return jsonResult(await core.smartCompile()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+  server.tool('pine_edit', 'Pine Script editor dispatcher — single tool for all editor operations on the currently open script. Actions: "get_source" reads the current code from Monaco (WARNING: complex scripts can exceed 200KB — avoid unless editing); "set_source" injects new code into the editor (requires source); "compile" clicks the Add-to-Chart / compile button; "smart_compile" detects the right button, compiles, polls for errors, and reports any new study added to the chart (preferred over plain compile); "get_errors" reads Monaco diagnostic markers (compilation errors and warnings); "get_console" reads runtime/log output (log.info, log.warning, compile messages); "save" persists the script to TradingView cloud (Ctrl+S equivalent); "check" sends provided source to TradingView\'s server-side compile API and returns errors/warnings WITHOUT touching the editor or chart (requires source); "analyze" runs an offline static analyzer on provided source — catches array out-of-bounds, unguarded array.first()/last(), bad loop bounds, implicit bool casts (requires source, no TradingView connection needed). Typical workflow: set_source → smart_compile → get_errors → save.', {
+    action: z.enum(['get_source', 'set_source', 'compile', 'smart_compile', 'get_errors', 'get_console', 'save', 'check', 'analyze']).describe('Editor action: get_source | set_source | compile | smart_compile | get_errors | get_console | save | check | analyze'),
+    source: z.string().optional().describe('Pine Script source code. REQUIRED for set_source (injected into editor), check (server-side validated), analyze (offline-validated). Ignored by other actions.'),
+  }, async ({ action, source }) => {
+    try {
+      switch (action) {
+        case 'get_source': return jsonResult(await core.getSource());
+        case 'set_source':
+          if (source === undefined) return jsonResult({ success: false, error: 'action=set_source requires source' }, true);
+          return jsonResult(await core.setSource({ source }));
+        case 'compile': return jsonResult(await core.compile());
+        case 'smart_compile': return jsonResult(await core.smartCompile());
+        case 'get_errors': return jsonResult(await core.getErrors());
+        case 'get_console': return jsonResult(await core.getConsole());
+        case 'save': return jsonResult(await core.save());
+        case 'check':
+          if (source === undefined) return jsonResult({ success: false, error: 'action=check requires source' }, true);
+          return jsonResult(await core.check({ source }));
+        case 'analyze':
+          if (source === undefined) return jsonResult({ success: false, error: 'action=analyze requires source' }, true);
+          return jsonResult(core.analyze({ source }));
+      }
+    } catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
   server.tool('pine_new', 'Create a new blank Pine Script', {
@@ -54,22 +42,8 @@ export function registerPineTools(server) {
     catch (err) { return jsonResult({ success: false, source: 'internal_api', error: err.message }, true); }
   });
 
-  server.tool('pine_list_scripts', 'List saved Pine Scripts', {}, async () => {
+  server.tool('pine_list_scripts', 'Read metadata for all Pine Scripts saved to the signed-in TradingView account. It does not return script source or open the editor. Output can be very large; inspect count and error because an empty list may represent an API limitation.', {}, async () => {
     try { return jsonResult(await core.listScripts()); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_analyze', 'Run static analysis on Pine Script code WITHOUT compiling — catches array out-of-bounds, unguarded array.first()/last(), bad loop bounds, and implicit bool casts. Works offline, no TradingView connection needed.', {
-    source: z.string().describe('Pine Script source code to analyze'),
-  }, async ({ source }) => {
-    try { return jsonResult(core.analyze({ source })); }
-    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
-  });
-
-  server.tool('pine_check', 'Compile Pine Script via TradingView\'s server API without needing the chart open. Returns compilation errors/warnings. Useful for validating code before injecting into the chart.', {
-    source: z.string().describe('Pine Script source code to compile/validate'),
-  }, async ({ source }) => {
-    try { return jsonResult(await core.check({ source })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 }
