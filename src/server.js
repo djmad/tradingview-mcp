@@ -8,8 +8,9 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { registerTools, getToolDefinitions } from './tool-definitions.js';
 import { pathToFileURL } from 'node:url';
 import { ActivityMonitor } from './activity.js';
-import { disconnect } from './connection.js';
-import { loadConfig, applyPermissions, allTools } from './permissions.js';
+import { disconnect, disposeSession, CDP_HOST, CDP_PORT, isChartTarget } from './connection.js';
+import { createSessionContext } from './session-context.js';
+import { loadConfig, applyPermissions, allTools, isToolEnabled } from './permissions.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
@@ -42,16 +43,17 @@ function parseArgs(argv) {
   return args;
 }
 
-function buildServer(activity = null) {
+function buildServer(activity = null, options = {}) {
+  const session = options.session || createSessionContext();
   const cfg = loadConfig();
   const server = new McpServer(
     {
       name: 'tradingview',
-      version: '2.1.0',
+      version: '2.2.0',
       description: 'AI-assisted TradingView chart analysis and Pine Script development via Chrome DevTools Protocol',
     },
     {
-      instructions: 'Use tv_health_check before chart automation. Every instrument identifier must be SOURCE:TICKER. If the source/exchange is unknown or ambiguous, call symbol_search and use the selected results[].full_name exactly; never guess or pass an unqualified ticker. Read-only chart tools operate on the active chart unless their description explicitly says otherwise. TradingView Desktop must run with remote debugging on port 9222.',
+      instructions: 'Use target_list first when multiple charts are open and target_select to bind this MCP session. Then use tv_health_check before chart automation. Every instrument identifier must be SOURCE:TICKER. If the source/exchange is unknown or ambiguous, call symbol_search and use the selected results[].full_name exactly; never guess or pass an unqualified ticker. Read-only chart tools operate on the active chart unless their description explicitly says otherwise. TradingView Desktop must run with remote debugging on port 9222.',
     },
   );
 
@@ -60,11 +62,11 @@ function buildServer(activity = null) {
   if (catalog.size !== actual.size || [...actual].some(name => !catalog.has(name))) {
     throw new Error('Permission catalog and registered tools differ. Classify every new tool before starting.');
   }
-  const { skipped } = applyPermissions(server, cfg, activity);
+  const { skipped } = applyPermissions(server, cfg, activity, { session, getAuditLogger: options.getAuditLogger });
 
-  registerTools(server);
+  (options.registerTools || registerTools)(server);
 
-  return { server, cfg, skipped, total: allTools().length };
+  return { server, cfg, skipped, session, dispose: () => disposeSession(session), total: allTools().length };
 }
 
 function writeBanner(cfg, skipped, total) {
@@ -72,10 +74,35 @@ function writeBanner(cfg, skipped, total) {
   process.stderr.write(`Permissions: mode=${cfg.mode}, enabled=${total - skipped.length}/${total}\n`);
 }
 
-async function startStdio() {
-  const { server, cfg, skipped, total } = buildServer();
+async function startStdio({ buildServer: makeServer = buildServer, stdin = process.stdin, stdout = process.stdout } = {}) {
+  const built = makeServer();
+  const { server, cfg, skipped, total } = built;
+  const transport = new StdioServerTransport(stdin, stdout);
+  let closing = false;
+  const removeListeners = () => {
+    stdin.off('end', onEnd);
+    stdin.off('close', onEnd);
+    process.off('SIGINT', onEnd);
+    process.off('SIGTERM', onEnd);
+  };
+  const shutdown = async () => {
+    if (closing) return;
+    closing = true;
+    removeListeners();
+    try { await server.close(); } finally { await built.dispose(); }
+  };
+  const onEnd = () => { void shutdown(); };
+  // The SDK preserves an existing transport hook, but McpServer does not expose
+  // a delegated onclose property. The SDK stdio transport also needs EOF wiring.
+  transport.onclose = () => { removeListeners(); void built.dispose(); };
+  stdin.once('end', onEnd);
+  stdin.once('close', onEnd);
+  process.once('SIGINT', onEnd);
+  process.once('SIGTERM', onEnd);
   writeBanner(cfg, skipped, total);
-  await server.connect(new StdioServerTransport());
+  try { await server.connect(transport); }
+  catch (error) { await shutdown(); throw error; }
+  return { ...built, transport, shutdown };
 }
 
 async function readJsonBody(req) {
@@ -110,10 +137,10 @@ function sendMcpError(res, statusCode, message) {
 
 async function probeTradingView(monitor) {
   try {
-    const response = await fetch('http://127.0.0.1:9222/json/list', { signal: AbortSignal.timeout(1500) });
+    const response = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`, { signal: AbortSignal.timeout(1500) });
     if (!response.ok) throw new Error(`CDP returned HTTP ${response.status}`);
     const targets = await response.json();
-    const chart = targets.find((target) => target.type === 'page' && /tradingview/i.test(target.url));
+    const chart = targets.find(isChartTarget);
     if (chart) monitor.setTradingView(true, cropTarget(chart.title || chart.url));
     else monitor.setTradingView(false, 'Port 9222 is open, but no TradingView chart was found');
   } catch {
@@ -126,7 +153,7 @@ function cropTarget(value) {
   return text.length > 80 ? `${text.slice(0, 77)}...` : text;
 }
 
-async function startHttp({ host, port, tui, transport: transportMode }) {
+async function startHttp({ host, port, tui, transport: transportMode, buildServer: makeServer = buildServer }) {
   const monitor = new ActivityMonitor();
   const streamableSessions = new Map();
   const legacySessions = new Map();
@@ -149,9 +176,10 @@ async function startHttp({ host, port, tui, transport: transportMode }) {
           monitor.sessionOpened(id);
         },
       });
-      const built = buildServer(monitor);
-      record = { id: null, transport, server: built.server };
+      const built = makeServer(monitor);
+      record = { id: null, transport, server: built.server, dispose: built.dispose };
       transport.onclose = () => {
+        void record.dispose();
         if (record.id) {
           streamableSessions.delete(record.id);
           monitor.sessionClosed(record.id);
@@ -169,15 +197,17 @@ async function startHttp({ host, port, tui, transport: transportMode }) {
   }
 
   async function handleLegacySse(req, res) {
-    const { server } = buildServer(monitor);
+    const built = makeServer(monitor);
+    const { server } = built;
     const transport = new SSEServerTransport('/messages', res, {
       enableDnsRebindingProtection: true,
       allowedHosts: [`${host}:${port}`, `127.0.0.1:${port}`, `localhost:${port}`],
     });
-    const record = { id: transport.sessionId, transport, server };
+    const record = { id: transport.sessionId, transport, server, dispose: built.dispose };
     legacySessions.set(record.id, record);
     monitor.sessionOpened(record.id, 'legacy-sse');
     transport.onclose = () => {
+      void record.dispose();
       legacySessions.delete(record.id);
       monitor.sessionClosed(record.id);
     };
@@ -243,6 +273,7 @@ async function startHttp({ host, port, tui, transport: transportMode }) {
     clearInterval(probeTimer);
     for (const record of [...streamableSessions.values(), ...legacySessions.values()]) {
       try { await record.transport.close(); } catch {}
+      await record.dispose();
     }
     await disconnect();
     await new Promise((resolve) => httpServer.close(resolve));
@@ -252,8 +283,11 @@ async function startHttp({ host, port, tui, transport: transportMode }) {
     httpServer.once('error', reject);
     httpServer.listen(port, host, resolve);
   });
+  port = httpServer.address().port;
 
-  const { cfg, skipped, total } = buildServer();
+  const cfg = loadConfig();
+  const total = allTools().length;
+  const skipped = allTools().filter(t => !isToolEnabled(t.name, cfg));
   writeBanner(cfg, skipped, total);
   monitor.addEvent('server', `Listening on http://${host}:${port}/${transportMode}`, 'success');
   await probeTradingView(monitor);
@@ -293,4 +327,4 @@ if (args.admin) {
 
 }
 
-export { buildServer, parseArgs, startHttp };
+export { buildServer, parseArgs, startHttp, startStdio };

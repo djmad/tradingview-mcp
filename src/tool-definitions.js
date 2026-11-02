@@ -1,3 +1,6 @@
+import { registerIhsgTools } from './tools/ihsg.js';
+import { registerTargetTools } from './tools/targets.js';
+import { registerAnalysisExtensionTools } from './tools/analysis-extensions.js';
 import { registerHealthTools } from './tools/health.js';
 import { registerChartTools } from './tools/chart.js';
 import { registerPineTools } from './tools/pine.js';
@@ -16,6 +19,9 @@ import { registerNewsTools } from './tools/news.js';
 import { registerFundamentalTools } from './tools/fundamentals.js';
 
 export function registerTools(server) {
+  registerIhsgTools(server);
+  registerTargetTools(server);
+  registerAnalysisExtensionTools(server);
   registerHealthTools(server);
   registerChartTools(server);
   registerPineTools(server);

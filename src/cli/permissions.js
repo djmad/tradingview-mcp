@@ -1,4 +1,4 @@
-import { isToolEnabled, loadConfig } from '../permissions.js';
+import { isToolEnabled, loadConfig, getAuditLogger } from '../permissions.js';
 
 // Map every CLI operation to the same permission used by its MCP equivalent.
 export function cliTools(command, sub, opts = {}, positionals = []) {
@@ -9,6 +9,7 @@ export function cliTools(command, sub, opts = {}, positionals = []) {
     quote: 'quote_get', ohlcv: 'data_get_ohlcv', values: 'data_get_study_values',
     screenshot: 'capture_screenshot',
   };
+  if (command === 'call') return [positionals[0]];
   if (simple[command]) return [simple[command]];
   if (['symbol', 'timeframe', 'type'].includes(command)) return [positionals.length ? 'chart_set' : 'chart_get_state'];
   if (command === 'range') return [opts.from && opts.to ? 'chart_set' : 'chart_get_visible_range'];
@@ -34,6 +35,9 @@ export function cliTools(command, sub, opts = {}, positionals = []) {
 
 export function assertCliPermission(command, sub, opts, positionals, cfg = loadConfig()) {
   for (const tool of cliTools(command, sub, opts, positionals)) {
-    if (!tool || !isToolEnabled(tool, cfg)) throw new Error(`Permission denied: ${tool || command}`);
+    if (!tool || !isToolEnabled(tool, cfg)) {
+      getAuditLogger().record({ tool: tool || command, status: 'denied', duration_ms: 0 });
+      throw new Error(`Permission denied: ${tool || command}`);
+    }
   }
 }

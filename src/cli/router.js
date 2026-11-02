@@ -3,7 +3,8 @@
  * Zero dependencies — uses only Node.js built-ins.
  */
 import { parseArgs } from 'node:util';
-import { assertCliPermission } from './permissions.js';
+import { getAuditLogger } from '../permissions.js';
+import { cliTools, assertCliPermission } from './permissions.js';
 
 /** @type {Map<string, { description: string, options?: object, handler: Function, subcommands?: Map<string, object> }>} */
 const commands = new Map();
@@ -110,7 +111,7 @@ export async function run(argv) {
         return;
       }
       assertCliPermission(cmdName, subName, values, positionals);
-      await execute(handler, values, positionals);
+      await execute(handler, values, positionals, cmdName, subName);
     } catch (err) {
       handleError(err);
     }
@@ -130,19 +131,23 @@ export async function run(argv) {
         return;
       }
       assertCliPermission(cmdName, null, values, positionals);
-      await execute(handler, values, positionals);
+      await execute(handler, values, positionals, cmdName, null);
     } catch (err) {
       handleError(err);
     }
   }
 }
 
-async function execute(handler, values, positionals) {
+async function execute(handler, values, positionals, command, sub) {
+  const logger = getAuditLogger();
+  const tokens = cliTools(command, sub, values, positionals).map(tool => logger.callStarted(tool));
   try {
     const result = await handler(values, positionals);
+    for (const token of tokens) logger.callFinished(token, { status: result?.success === false ? 'error' : 'success' });
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = 0;
   } catch (err) {
+    for (const token of tokens) logger.callFinished(token, { status: 'threw' });
     handleError(err);
   }
 }

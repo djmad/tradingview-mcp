@@ -1,9 +1,12 @@
 # TradingView MCP tool catalog
 
-All 75 registered tools are listed below, including tools disabled by your current settings. The permission TUI (npm run admin; Enter for details) and MCP tools/list provide full parameter descriptions. See [README](../README.md) for transports, workflows and permission behavior.
+All 84 registered tools appear below, including disabled tools. The permission TUI (npm run admin; Enter for details) and MCP tools/list expose current parameter descriptions. Tools operate on the requesting session-selected chart, not an arbitrary window. See [README](../README.md) and [approved v2.2 features](../docs/APPROVED_FEATURES.md).
 
 | Tool | Access | Parameters |
 |---|---|---|
+| `IHSG_Screen` | write | `symbols`, `cursor`, `limit`, `timeout_ms`, `min_avg_value_trx_50d`, `criteria`, `export_reports` |
+| `target_list` | read | (none) |
+| `target_select` | write | `target_id` |
 | `tv_health_check` | read | (none) |
 | `tv_discover` | read | (none) |
 | `tv_ui_state` | read | (none) |
@@ -27,6 +30,7 @@ All 75 registered tools are listed below, including tools disabled by your curre
 | `symbol_search` | read | `query`, `type` |
 | `data_save_ohlcv` | write | `symbol`, `timeframe`, `max_history`, `max_iterations`, `settle_ms` |
 | `strategy_prepare` | write | (none) |
+| `data_load_history` | write | `before`, `count`, `max_iterations`, `timeout_ms`, `page_size`, `settle_ms` |
 | `pine_list_scripts` | read | (none) |
 | `pine_edit` | write | `action`, `allow_title_mismatch`, `source` |
 | `pine_new` | write | `type` |
@@ -48,14 +52,19 @@ All 75 registered tools are listed below, including tools disabled by your curre
 | `data_get_etf_profile` | read | `symbol`, `section` |
 | `data_get_seasonals` | read | `symbol`, `years` |
 | `capture_screenshot` | read | `region`, `filename`, `method`, `wait_for_render` |
+| `indicator_get_style` | read | `entity_id` |
 | `indicator_set_inputs` | write | `entity_id`, `inputs` |
 | `indicator_toggle_visibility` | write | `entity_id`, `visible` |
 | `indicator_search` | write | `query`, `limit` |
 | `indicator_add` | write | `query`, `match`, `section` |
+| `indicator_set_style` | write | `entity_id`, `overrides` |
 | `watchlist_get` | read | (none) |
+| `watchlist_get_sections` | read | `list_id` |
 | `watchlist_add` | write | `symbol` |
 | `watchlist_add_bulk` | write | `symbols` |
 | `watchlist_remove` | write | `symbols` |
+| `watchlist_create_section` | write | `list_id`, `section`, `expected_revision` |
+| `watchlist_move_to_section` | write | `list_id`, `section`, `expected_revision`, `symbols` |
 | `layout_list` | read | (none) |
 | `layout_switch` | write | `name` |
 | `layout_new` | write | `name` |
@@ -67,7 +76,7 @@ All 75 registered tools are listed below, including tools disabled by your curre
 | `tab_close` | write | (none) |
 | `tab_new` | write | `layout`, `name` |
 | `tab_switch` | write | `index` |
-| `replay` | write | `action`, `date`, `speed`, `trade_action` |
+| `replay` | write | `action`, `date`, `timestamp`, `speed`, `trade_action` |
 | `batch_run` | write | `symbols`, `timeframes`, `action`, `delay_ms`, `ohlcv_count` |
 | `ui_find_element` | read | `query`, `strategy` |
 | `ui_click` | write | `by`, `value` |

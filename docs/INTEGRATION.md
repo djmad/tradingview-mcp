@@ -1,4 +1,6 @@
-# Integration record — 2026-11-02
+# Historical v2.1 integration record — 2026-11-02
+
+The subsequently approved v2.2 extensions are recorded in [APPROVED_FEATURES.md](APPROVED_FEATURES.md). Tool counts and checks below describe the earlier v2.1 snapshot.
 
 ## Provenance and recovery
 
@@ -49,11 +51,11 @@ These were adapted from open PRs, not blindly merged as features:
 - Live receipts stay outside Git in __integration/live-results.json. No account alerts, trades, Pine editor new/open/save, self-update or launch termination were exercised live. Pine safety has 19 mock/DOM regression tests; English menu or DOM differences can cause a safe failure on other app versions/locales. The broad mutating e2e suite was deliberately not run.
 - Secret-pattern and conflict-marker checks completed before publication. This is not a complete security audit or a guarantee that every upstream bug has been resolved.
 
-## Full PR triage and later decisions
+## Full PR triage and subsequent approval
 
 [All 201 open PRs](upstream-pr-triage.md) were enumerated and triaged, with review depth explicit per row: 17 complete diffs, 4 additional targeted source diffs, and body review/skimming for the remainder; 6 empty bodies received title-only review. The ledger is an inventory and triage, not 201 full code audits. Dispositions reflect this integration where updated.
 
-Useful features reserved for later user decisions:
+These features were subsequently approved and implemented in v2.2; see the current feature record:
 
 - [History loading without changing the viewport (512)](https://github.com/tradesdontlie/tradingview-mcp/issues/512).
 - [Explicit multi-window/target ownership (61)](https://github.com/tradesdontlie/tradingview-mcp/issues/61).
@@ -62,4 +64,4 @@ Useful features reserved for later user decisions:
 - [Watchlist sections/groups (410)](https://github.com/tradesdontlie/tradingview-mcp/issues/410), currently title-level requirements only.
 - [Exact intraday replay timestamps (434)](https://github.com/tradesdontlie/tradingview-mcp/pull/434).
 
-Replay stop/live-transition behavior (532) and broader CDP deadlines/reconnection designs (411/449) remain bug candidates for a separate focused live check. None of the optional feature proposals above were implemented.
+Replay stop/live-transition behavior (532) and broader CDP deadlines/reconnection designs (411/449) remain bug candidates for a separate focused live check. The proposals were not implemented in this v2.1 snapshot; the current v2.2 record documents their implementation.

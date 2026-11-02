@@ -1,6 +1,6 @@
 {
   "name": "tradingview-mcp",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "MCP bridge for TradingView Desktop via Chrome DevTools Protocol",
   "type": "module",
   "main": "src/server.js",
@@ -26,16 +26,20 @@
     "test:all": "npm run test:unit && npm run test:e2e",
     "test:verbose": "node --test --test-reporter=spec tests/e2e.test.js tests/pine_analyze.test.js",
     "test:count": "node --test --test-reporter=spec tests/e2e.test.js 2>&1 | tail -5",
-    "lint": "eslint src tests scripts"
+    "lint": "eslint src tests scripts screener"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "chrome-remote-interface": "0.33.3",
+    "exceljs": "4.4.0",
     "zod": "4.6.7"
   },
   "overrides": {
     "@hono/node-server": "2.1.6",
-    "minimatch": "11.0.4"
+    "minimatch": "11.0.4",
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   },
   "engines": {
     "node": ">=20.19.0"

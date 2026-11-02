@@ -14,3 +14,9 @@ prompts/
 .mcp.json
 AUDIT_REPORT.md
 SHA256SUMS.txt
+
+.local/
+*.jsonl
+*.jsonl.*
+
+screener/results/

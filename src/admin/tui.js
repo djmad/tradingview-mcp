@@ -1,5 +1,5 @@
 import readline from 'node:readline';
-import { allTools, loadConfig, saveEnv, configToEnv, isToolEnabled, setPermissionMode } from '../permissions.js';
+import { allTools, loadConfig, saveEnv, configToEnv, isToolEnabled, setPermissionMode, loadAuditConfig } from '../permissions.js';
 
 import { getToolDefinitions } from '../tool-definitions.js';
 
@@ -13,8 +13,9 @@ const red = `${ESC}31m`;
 const yellow = `${ESC}33m`;
 const cyan = `${ESC}36m`;
 
-export function runTui({ stdin = process.stdin, stdout = process.stdout, onQuit = (code) => process.exit(code) } = {}) {
+export function runTui({ stdin = process.stdin, stdout = process.stdout, onQuit = (code) => process.exit(code), saveSettings = saveEnv } = {}) {
   const cfg = loadConfig();
+  let auditEnabled = loadAuditConfig().enabled;
   const definitions = new Map(getToolDefinitions().map(t => [t.name, t]));
   const tools = allTools().map(t => ({ ...t, ...definitions.get(t.name) }));
   let details = false;
@@ -63,7 +64,7 @@ export function runTui({ stdin = process.stdin, stdout = process.stdout, onQuit 
     stdout.write(cfg.mode === 'rw' ? `${green}${inv} RW ${reset}` : ` rw `);
     stdout.write(' ');
     stdout.write(cfg.mode === 'custom' ? `${green}${inv} CUSTOM ${reset}` : ` custom `);
-    stdout.write(`   ${dim}[r]ead [w]rw [c]ustom  space=toggle  enter=details  s=save  q=quit${reset}\n`);
+    stdout.write(`   ${dim}[r]ead [w]rw [c]ustom  [l]audit=${auditEnabled ? 'on' : 'off'}  space=toggle  enter=details  s=save  q=quit${reset}\n`);
     stdout.write(`${dim}${'─'.repeat(72)}${reset}\n`);
 
     const rows = stdout.rows || 30;
@@ -106,7 +107,7 @@ export function runTui({ stdin = process.stdin, stdout = process.stdout, onQuit 
   }
 
   function save() {
-    saveEnv(configToEnv(cfg));
+    saveSettings({ ...configToEnv(cfg), MCP_AUDIT_LOG: auditEnabled ? 'true' : 'false' });
     dirty = false;
     status = `${green}Saved to .env - reconnect to enable tools${reset}`;
   }
@@ -139,6 +140,7 @@ export function runTui({ stdin = process.stdin, stdout = process.stdout, onQuit 
     else if (key.name === 'home') cursor = 0;
     else if (key.name === 'end') cursor = tools.length - 1;
     else if (str === ' ') toggleOne(tools[cursor].name);
+    else if (key.name === 'l') { auditEnabled = !auditEnabled; dirty = true; confirmingQuit = false; }
     else if (key.name === 'r') { setMode('read'); confirmingQuit = false; }
     else if (key.name === 'w') { setMode('rw'); confirmingQuit = false; }
     else if (key.name === 'c') { setMode('custom'); confirmingQuit = false; }

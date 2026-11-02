@@ -1,9 +1,13 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createAuditLogger } from './audit-log.js';
+import { createSessionContext, runWithSessionContext } from './session-context.js';
 
 const ENV_PATH = resolve(process.cwd(), '.env');
 
 export const TOOL_CATALOG = {
+  screeners: { read: [], write: ['IHSG_Screen'] },
+  targets: { read: ['target_list'], write: ['target_select'] },
   health: {
     read: ['tv_health_check', 'tv_discover', 'tv_ui_state'],
     write: ['tv_launch', 'tv_update'],
@@ -14,7 +18,7 @@ export const TOOL_CATALOG = {
   },
   data: {
     read: ['data_get_equity', 'data_get_indicator', 'data_get_ohlcv', 'data_get_pine_graphics', 'data_get_strategy_results', 'data_get_study_values', 'data_get_trades', 'quote_get', 'depth_get', 'symbol_info', 'symbol_search'],
-    write: ['data_save_ohlcv', 'strategy_prepare'],
+    write: ['data_save_ohlcv', 'strategy_prepare', 'data_load_history'],
   },
   pine: {
     read: ['pine_list_scripts'],
@@ -38,12 +42,12 @@ export const TOOL_CATALOG = {
     write: [],
   },
   indicators: {
-    read: [],
-    write: ['indicator_set_inputs', 'indicator_toggle_visibility', 'indicator_search', 'indicator_add'],
+    read: ['indicator_get_style'],
+    write: ['indicator_set_inputs', 'indicator_toggle_visibility', 'indicator_search', 'indicator_add', 'indicator_set_style'],
   },
   watchlist: {
-    read: ['watchlist_get'],
-    write: ['watchlist_add', 'watchlist_add_bulk', 'watchlist_remove'],
+    read: ['watchlist_get', 'watchlist_get_sections'],
+    write: ['watchlist_add', 'watchlist_add_bulk', 'watchlist_remove', 'watchlist_create_section', 'watchlist_move_to_section'],
   },
   layout: {
     read: ['layout_list'],
@@ -133,7 +137,38 @@ export function isToolEnabled(name, cfg) {
   return cfg.enabled.has(name) && !cfg.disabled.has(name);
 }
 
-export function applyPermissions(server, cfg, activity = null) {
+export function loadAuditConfig() {
+  const env = { ...loadEnv(), ...process.env };
+  return {
+    enabled: /^(1|true)$/i.test(env.MCP_AUDIT_LOG || ''),
+    filePath: env.MCP_AUDIT_LOG_PATH || '.local/audit/tool-calls.jsonl',
+    maxBytes: Number(env.MCP_AUDIT_MAX_BYTES || 1048576),
+    maxFiles: Number(env.MCP_AUDIT_MAX_FILES || 3),
+  };
+}
+
+let auditCache;
+export function getAuditLogger() {
+  const config = loadAuditConfig();
+  const key = JSON.stringify(config);
+  if (!auditCache || auditCache.key !== key) {
+    auditCache = { key, logger: createAuditLogger({ ...config, toolNames: allTools().map(t => t.name) }) };
+  }
+  return auditCache.logger;
+}
+
+function failedToolResult(result) {
+  if (result?.isError || result?.success === false) return true;
+  const text = result?.content?.find(c => c.type === 'text')?.text;
+  if (typeof text === 'string' && text.length <= 1048576) {
+    try { return JSON.parse(text)?.success === false; } catch { /* non-JSON tool output */ }
+  }
+  return false;
+}
+
+export function applyPermissions(server, cfg, activity = null, options = {}) {
+  const session = options.session || createSessionContext();
+  const audit = options.getAuditLogger || getAuditLogger;
   const original = server.tool.bind(server);
   const skipped = [];
   server.tool = (name, ...rest) => {
@@ -142,28 +177,34 @@ export function applyPermissions(server, cfg, activity = null) {
       skipped.push(name);
       return { remove: () => {}, update: () => {}, enable: () => {}, disable: () => {} };
     }
-    const callbackIndex = rest.findLastIndex((value) => typeof value === 'function');
+    const callbackIndex = rest.findLastIndex(value => typeof value === 'function');
     if (callbackIndex >= 0) {
       const callback = rest[callbackIndex];
-      rest[callbackIndex] = async (...args) => {
+      rest[callbackIndex] = (...args) => runWithSessionContext(session, async () => {
+        // Recheck after queueing: a permission may have been revoked while another call ran.
+        const logger = audit();
         if (!isToolEnabled(name, loadConfig())) {
+          logger.record({ tool: name, status: 'denied', duration_ms: 0, targetId: session.selectedTargetId });
           return { isError: true, content: [{ type: 'text', text: `Permission denied: ${name}` }] };
         }
+        const token = logger.callStarted(name, { targetId: session.selectedTargetId });
         const callId = activity?.toolStarted(name);
         try {
           const result = await callback(...args);
-          const toolError = result?.isError ? new Error('Tool returned an MCP error result') : null;
-          activity?.toolFinished(callId, toolError);
+          const failed = failedToolResult(result);
+          activity?.toolFinished(callId, failed ? new Error('Tool returned an error result') : null);
+          logger.callFinished(token, { status: failed ? 'error' : 'success' });
           return result;
         } catch (error) {
           activity?.toolFinished(callId, error);
+          logger.callFinished(token, { status: 'threw' });
           throw error;
         }
-      };
+      });
     }
     return original(name, ...rest);
   };
-  return { skipped };
+  return { skipped, session };
 }
 
 export function saveEnv(updates) {
